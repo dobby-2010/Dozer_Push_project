@@ -58,7 +58,7 @@ dfdiff["delta_elevation"] = cs1["elevation"].reset_index(drop=True) - cs2["eleva
 from sklearn.mixture import GaussianMixture
 from sklearn.cluster import AgglomerativeClustering 
 from sklearn.cluster import DBSCAN
-
+from sklearn.cluster import AffinityPropagation
 
 
 ############################################################################################################################################
@@ -93,7 +93,7 @@ dfdiff["cluster"] = ac.labels_
 fig = go.Figure()
 fig = px.scatter(x=dfdiff.easting, y=dfdiff.delta_elevation, color=dfdiff.cluster)
 fig.update_layout(title="Agglomerative Clustering")
-fig.show()
+#fig.show()
 
 
 ############################################################################################################################################
@@ -132,7 +132,7 @@ dfdiff["cluster"] = gmm.predict(dfdiff[["easting", "delta_elevation"]])
 fig = go.Figure()
 fig = px.scatter(x=dfdiff.easting, y=dfdiff.delta_elevation, color=dfdiff.cluster)
 fig.update_layout(title="Gaussian Mixture")
-fig.show()
+#fig.show()
 
 
 
@@ -199,7 +199,7 @@ for eps_trial in eps_list:
 #computing "the silhouette score"
 #print("Silhouette Coefficient: %0.3f"
 #      % metrics.silhouette_score(X, labels))
-print(silhouette_scores_data)
+#(silhouette_scores_data)
 
 #fig = go.Figure()
 #fig = px.scatter(x=silhouette_scores_data.loc[:,"Optimal Minimal Sample Score"], y=silhouette_scores_data.loc[:,"Best Silhouette Score"])
@@ -216,5 +216,109 @@ dfdiff["cluster"] = db.labels_
 fig = go.Figure()
 fig = px.scatter(x=dfdiff.easting, y=dfdiff.delta_elevation, color=dfdiff.cluster)
 fig.update_layout(title="DBSCAN")
+#fig.show()
+
+###########################################################################################################################################
+"""
+Affinity Propagation
+
+Perform affinity propagation clustering of data
+
+USECASE: Many Clusters, uneven cluster size, non-flat geometry, inductive
+
+https://scikit-learn.org/stable/modules/generated/sklearn.cluster.AffinityPropagation.html#
+
+"""
+############################################################################################################################################
+
+
+
+silhouette_coefficients = []
+'''
+for k in tqdm(range(2, 200), desc="Clustering"):
+    afprop = AffinityPropagation(preference=-50, max_iter=k).fit(dfdiff[["easting", "delta_elevation"]])
+    score = silhouette_score(dfdiff[["easting", "delta_elevation"]], afprop.predict(dfdiff[["easting", "delta_elevation"]]))
+    silhouette_coefficients.append(score)
+
+   
+fig = go.Figure()
+fig = px.scatter(x=range(2, 10), y=silhouette_coefficients)
+fig.update_layout(title="Optimal Silhouette Coefficients-Guassian Mixture")
 fig.show()
+
+#clusters = range(2, 10)[silhouette_coefficients.index(max(silhouette_coefficients))]
+    
+afprop = AffinityPropagation().fit(dfdiff[["easting", "delta_elevation"]])
+dfdiff["cluster"] = afprop.predict(dfdiff[["easting", "delta_elevation"]])
+score = silhouette_score(dfdiff[["easting", "delta_elevation"]], afprop.predict(dfdiff[["easting", "delta_elevation"]]))
+silhouette_coefficients.append(score)
+print(silhouette_score)
+fig = go.Figure()
+fig = px.scatter(x=dfdiff.easting, y=dfdiff.delta_elevation, color=dfdiff.cluster)
+fig.update_layout(title="Affinity Propagation")
+fig.show()
+
+'''
+import numpy as np
+from sklearn.cluster import AffinityPropagation
+from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
+
+# Standardize the data
+print(dfdiff[["easting", "delta_elevation"]])
+scaler = StandardScaler()
+data_scaled = dfdiff[["easting", "delta_elevation"]]
+
+# Define the parameter grid to search
+param_grid = {
+    'damping': np.linspace(0.5, 0.1, 1.0),
+    'preference': np.linspace(-10, 1, 21)
+}
+
+# Calculate the silhouette scores for each combination of parameters
+best_score = -1
+best_params = None
+for damping in param_grid['damping']:
+    for preference in param_grid['preference']:
+        # Create an instance of the AffinityPropagation algorithm with current parameters
+        affinity_propagation = AffinityPropagation(damping=damping, preference=preference)
+        
+        # Fit the data to the algorithm
+        affinity_propagation.fit(data_scaled)
+        
+        # Get the cluster labels
+        labels = affinity_propagation.labels_
+        
+        print(data_scaled)
+        print(labels)
+        
+        # Calculate the silhouette score
+        score = silhouette_score(data_scaled, labels)
+        
+        # Update the best score and parameters if the current score is higher
+        if score > best_score:
+            best_score = score
+            best_params = {'damping': damping, 'preference': preference}
+
+# Print the best parameters and silhouette score
+print("Best Parameters: ", best_params)
+print("Best Silhouette Score: ", best_score)
+
+# Find the outlier sections based on the z-axis using the optimal parameters
+affinity_propagation = AffinityPropagation(**best_params)
+affinity_propagation.fit(data_scaled)
+labels = affinity_propagation.labels_
+unique_labels = np.unique(labels)
+outlier_sections = []
+for label in unique_labels:
+    z_values = data[:, 2][labels == label]
+    if np.std(z_values) > 2:  # Modify the threshold as needed
+        outlier_sections.append(label)
+
+# Print the outlier sections
+print("Outlier Sections:", outlier_sections)
+
+
+
+
 
