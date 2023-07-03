@@ -70,8 +70,8 @@ location = l3
 
 
 df1 = data_full[data_full["northing"] == location]
-cs1 = df1[df1["dataset"] == "t1"].reset_index(drop=True)    #cross section 1
-cs2 = df1[df1["dataset"] == "t2"].reset_index(drop=True)    #cross section 2
+cs1 = df1[df1["dataset"] == "t1"]  #cross section 1
+cs2 = df1[df1["dataset"] == "t2"]    #cross section 2
 df = pd.concat([cs1, cs2], ignore_index=True)               #data
 dfdiff = cs1[["easting", "northing"]].reset_index(drop=True) #data_diff
 dfdiff["delta_elevation"] = cs1["elevation"].reset_index(drop=True) - cs2["elevation"].reset_index(drop=True)
@@ -156,7 +156,6 @@ db = clustering = DBSCAN(eps=eps_best, min_samples=min_sample_trial).fit(X)  #us
         #storing the labels formed by the DBSCAN
 
 dfdiff["cluster"] = db.labels_
-print(dfdiff)
 
 
 ########################################################################################################################################################################################################################################################################### #
@@ -165,14 +164,49 @@ print(dfdiff)
 ###################################################################################################################################################################################################################################################################
 #set a limit for which the elevation is too great for it not to be an error
 elevation_limit = 6
+index_list = []
+data_update = cs2 #cross secion 2
 for cluster_number in dfdiff["cluster"].unique():
-    print(i)
     cl1 = dfdiff[dfdiff["cluster"] == cluster_number]   #isolate all points connected to this specific cluster
     #find the average elevation for this specific cluster
     elevation_avg = cl1['delta_elevation'].mean()
     #check to see if this elevtion is too great
-    if elevation_avg*elevation_avg <= elevation_limit*elevation_limit:
+    if elevation_avg*elevation_avg >= elevation_limit*elevation_limit:
+        locations_1 = cl1.iloc[:,[0,1]]
+        #dataframe of locations for which need there elevation wiped
+        for easting_change in locations_1['easting']:
+            for northing_change in locations_1["northing"]:
+           #  #this will find the index locaions for each easing and nothing found above
+                index_change = data_update[data_update["easting"] == easting_change]
+                index_change_1 = index_change[index_change['northing'] == northing_change ]
+                index_list.append(index_change_1.index.tolist())
         
-        
+        print(index_list)
+        for index_value in index_list:
+            data_update.loc[index_value, "elevation"] = 0
        
-        
+       
+
+fig = go.Figure()
+fig = px.scatter(x=data_update.easting, y=data_update.elevation)
+
+fig.update_layout(title="update")
+fig.show()
+    
+
+
+      
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+...
