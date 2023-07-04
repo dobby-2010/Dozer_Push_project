@@ -183,7 +183,7 @@ for cluster_number in dfdiff["cluster"].unique():
         #print(index_list)
         for index_value in index_list:
             data_update.loc[index_value, "elevation"] = 0
-            
+        
 #get rid of any duplicates     
 index_list = sorted(list(set([item for sublist in index_list for item in sublist])))
 
@@ -191,23 +191,24 @@ index_list = sorted(list(set([item for sublist in index_list for item in sublist
 varaince = 3 #how many points either side
 min_update_value = min(index_list) - varaince
 max_update_value = max(index_list) + varaince
-
+update_values = [min_update_value, max_update_value]
 
 #Need to use the cheby filter remove the 'incorrect' cluster 
 from tqdm import tqdm
 
-cross_section_t1 = data_update[data_update["dataset"] == "t2"].reset_index(drop=True) # this is a single cross section of a single surface
-cross_section_t1_new = cross_section_t1.copy()
+cross_section_t1 = cs1
+cross_section_t2 = data_update[data_update["dataset"] == "t2"].reset_index(drop=True) # this is a single cross section of a single surface
+cross_section_t2_new = cross_section_t2.copy()
 N = np.arange(2, 11, 1) # possible values of first parameter
 Wn = np.linspace(0.01, 0.99, 50) # possible values of second parameter
 grid = np.ones((len(N), len(Wn))) # this is where I will store the values from my loss function
 for i, row in enumerate(N): # loop through all possible permutations of the 2 parameters
     for j, item in enumerate(Wn):
         b, a = cheby1(N=row, Wn=item, rp=21) # parameters define a & b
-        cross_section_t1_new.loc[:, "elevation"] = pd.DataFrame(
-            filtfilt(b, a, cross_section_t1.loc[:, "elevation"].values)
+        cross_section_t2_new.loc[min_update_value:max_update_value, "elevation"] = pd.DataFrame(
+            filtfilt(b, a, cross_section_t2.loc[min_update_value:max_update_value, "elevation"].values, padlen = 2)
         ).loc[:, 0] # a and b determine the smoothing of elevations
-        delta_elevation = cross_section_t1_new["elevation"] - cross_section_t2["elevation"] # compare new elevations to the original
+        delta_elevation =cross_section_t1["elevation"] -  cross_section_t2_new["elevation"]   # compare new elevations to the original
         loss_fn = abs(delta_elevation).sum() # my loss function here is just the sum of the difference
         grid[i, j] = loss_fn # store this combination of the hyperparameter's loss value in my grid
 
@@ -216,7 +217,7 @@ optimised_N = N[grid_search[0]] # this is the optimized param N
 optimised_Wn = Wn[grid_search[1]] # this is the optimized param Wn
 
 b, a = cheby1(N=optimised_N, Wn=optimised_Wn, rp=21) # Let's recompute the elevations using these optimised a & b
-cross_section_t1.loc[:, "elevation"] = filtfilt(b, a, cross_section_t1.loc[:, "elevation"].values)
+cross_section_t2.loc[min_update_value:max_update_value, "elevation"] = filtfilt(b, a, cross_section_t2.loc[min_update_value:max_update_value, "elevation"].values, padlen = 2)
 data = pd.concat([cross_section_t1, cross_section_t2], ignore_index=True)
 fig = go.Figure()
 fig = px.scatter(x=data.easting, y=data.elevation, color=data.dataset)
@@ -227,13 +228,8 @@ fig.show()
 
 
 
-fig = go.Figure()
-fig = px.scatter(x=data_update.easting, y=data_update.elevation)
+#fig = go.Figure()
+#fig = px.scatter(x=data_update.easting, y=data_update.elevation)
 
-fig.update_layout(title="update")
-fig.show()
-    
-
-
-      
-       
+#fig.update_layout(title="update")
+#fig.show()
