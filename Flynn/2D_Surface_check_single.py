@@ -159,13 +159,12 @@ dfdiff["cluster"] = db.labels_
 
 
 ########################################################################################################################################################################################################################################################################### #
-#
 #Irterate through each cluster
 ###################################################################################################################################################################################################################################################################
 #set a limit for which the elevation is too great for it not to be an error
 elevation_limit = 6
 index_list = []
-data_update = cs2 #cross secion 2
+data_update = cs2.reset_index(drop=True) #T2 is updating the older surface, drop=True means that we reset the index, if we wanna use the original indexs remove this 
 for cluster_number in dfdiff["cluster"].unique():
     cl1 = dfdiff[dfdiff["cluster"] == cluster_number]   #isolate all points connected to this specific cluster
     #find the average elevation for this specific cluster
@@ -178,14 +177,55 @@ for cluster_number in dfdiff["cluster"].unique():
             for northing_change in locations_1["northing"]:
            #  #this will find the index locaions for each easing and nothing found above
                 index_change = data_update[data_update["easting"] == easting_change]
-                index_change_1 = index_change[index_change['northing'] == northing_change ]
+                index_change_1 = index_change[index_change['northing'] == northing_change]
                 index_list.append(index_change_1.index.tolist())
-        
-        print(index_list)
+        unique_index_list = []
+        #print(index_list)
         for index_value in index_list:
             data_update.loc[index_value, "elevation"] = 0
-       
-       
+            
+#get rid of any duplicates     
+index_list = sorted(list(set([item for sublist in index_list for item in sublist])))
+
+#We need the values either side of the points which have been removed.#lets say were looking for 3 points either side
+varaince = 3 #how many points either side
+min_update_value = min(index_list) - varaince
+max_update_value = max(index_list) + varaince
+
+
+#Need to use the cheby filter remove the 'incorrect' cluster 
+from tqdm import tqdm
+
+cross_section_t1 = data_update[data_update["dataset"] == "t2"].reset_index(drop=True) # this is a single cross section of a single surface
+cross_section_t1_new = cross_section_t1.copy()
+N = np.arange(2, 11, 1) # possible values of first parameter
+Wn = np.linspace(0.01, 0.99, 50) # possible values of second parameter
+grid = np.ones((len(N), len(Wn))) # this is where I will store the values from my loss function
+for i, row in enumerate(N): # loop through all possible permutations of the 2 parameters
+    for j, item in enumerate(Wn):
+        b, a = cheby1(N=row, Wn=item, rp=21) # parameters define a & b
+        cross_section_t1_new.loc[:, "elevation"] = pd.DataFrame(
+            filtfilt(b, a, cross_section_t1.loc[:, "elevation"].values)
+        ).loc[:, 0] # a and b determine the smoothing of elevations
+        delta_elevation = cross_section_t1_new["elevation"] - cross_section_t2["elevation"] # compare new elevations to the original
+        loss_fn = abs(delta_elevation).sum() # my loss function here is just the sum of the difference
+        grid[i, j] = loss_fn # store this combination of the hyperparameter's loss value in my grid
+
+grid_search = np.unravel_index(grid.argmin(), grid.shape) # find the index of the minimum loss (want to minimize loss)
+optimised_N = N[grid_search[0]] # this is the optimized param N
+optimised_Wn = Wn[grid_search[1]] # this is the optimized param Wn
+
+b, a = cheby1(N=optimised_N, Wn=optimised_Wn, rp=21) # Let's recompute the elevations using these optimised a & b
+cross_section_t1.loc[:, "elevation"] = filtfilt(b, a, cross_section_t1.loc[:, "elevation"].values)
+data = pd.concat([cross_section_t1, cross_section_t2], ignore_index=True)
+fig = go.Figure()
+fig = px.scatter(x=data.easting, y=data.elevation, color=data.dataset)
+fig.update_layout(title="Cheby1") # display the resulting smoothed elevations
+fig.show()
+
+
+
+
 
 fig = go.Figure()
 fig = px.scatter(x=data_update.easting, y=data_update.elevation)
@@ -197,16 +237,3 @@ fig.show()
 
       
        
-       
-       
-       
-       
-       
-       
-       
-       
-       
-       
-       
-       
-...
