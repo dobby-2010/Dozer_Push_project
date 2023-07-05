@@ -66,7 +66,7 @@ l4 = 7516922.99
 
 
 #select a location
-location = 4
+location = l4
 
 
 df1 = data_full[data_full["northing"] == location]
