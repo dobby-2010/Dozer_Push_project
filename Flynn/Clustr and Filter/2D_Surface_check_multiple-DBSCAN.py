@@ -27,11 +27,26 @@ from sklearn.cluster import DBSCAN
 ###
 ################################################################################################################################################################################################
 
+#24 hours
 #import and read csv file
 data_1 = pd.read_csv("CE_36_B03-202305030845.csv")
 data_1.columns = ["easting", "northing", "elevation"]
 data_2 = pd.read_csv("CE_36_B03-202305040800.csv")
 data_2.columns = ["easting", "northing", "elevation"]
+
+#15 minutes example change t2 
+#data_1 = pd.read_csv("CE_36_B03-202304281615.csv")
+#data_1.columns = ["easting", "northing", "elevation"]
+#data_2 = pd.read_csv("CE_36_B03-202304281630.csv")
+#data_2.columns = ["easting", "northing", "elevation"]
+
+#15 minutes example change t1 
+#data_2 = pd.read_csv("CE_36_B03-202304281615.csv")
+#data_2.columns = ["easting", "northing", "elevation"]
+#data_1 = pd.read_csv("CE_36_B03-202304281630.csv")
+#data_1.columns = ["easting", "northing", "elevation"]
+
+
 
 #find elevation change
 data_1["dataset"] = "t1"
@@ -80,8 +95,7 @@ for x in norths_to_inspect:
     fig = go.Figure()
     fig = px.scatter(x=dfdiff.easting, y=dfdiff.delta_elevation)
 
-
-    fig.update_layout(title="original volume change",
+    fig.update_layout(title="volume change at "+str(location)+" before filtering",
                   xaxis_title='Easting (m)',
                   yaxis_title='Elevation (m)')
     fig.show()
@@ -89,7 +103,7 @@ for x in norths_to_inspect:
     fig = go.Figure()
     fig = px.scatter(x=df1["easting"],  y=df1["elevation"], color=df1["dataset"])
 
-    fig.update_layout(title=location,
+    fig.update_layout(title="before filtering at "+str(location),
                   xaxis_title='Easting (m)',
                   yaxis_title='Elevation (m)')
     fig.show()
@@ -139,22 +153,35 @@ for x in norths_to_inspect:
             
                 if len(np.unique(labels)) > 1: #check is lebels if greater than 1 which is has to be. IF not then likely all zeros and not useful anyway
                     sil_score_new = metrics.silhouette_score(X, labels)
+                    #print("sil score new is " + str(sil_score_new))
                 else:
                     continue
                 if sil_score_new > sil_score:       #checks if new silhouette score is greater than previous, if so make it the greatest score. This is to find the greatest silhouse score possible and its corresponding values
-                    silscore = sil_score_new
+                    sil_score = sil_score_new
+                    #print("silscore is " + str(sil_score))
                     eps_best = eps_trial
                     min_sample_best  = min_sample_trial
-                    silhouette_scores_data = silhouette_scores_data.append(pd.DataFrame(data=[[silscore, eps_best, min_sample_best]], columns=['Best Silhouette Score', 'Optimal EPS', 'Optimal Minimal Sample Score']))
-                
+                    silhouette_scores_data = silhouette_scores_data.append(pd.DataFrame(data=[[sil_score, eps_best, min_sample_best]], columns=['Best Silhouette Score', 'Optimal EPS', 'Optimal Minimal Sample Score']))
+                    print(silhouette_coefficients)
+                    print(silhouette_scores_data)
             else:
                 continue
         
 
-    db = clustering = DBSCAN(eps=eps_best, min_samples=min_sample_trial).fit(X)  #use min samples = 4
+    db = clustering = DBSCAN(eps=eps_best, min_samples=min_sample_best).fit(X)  #use min samples = 4
         #storing the labels formed by the DBSCAN
 
+
+
     dfdiff["cluster"] = db.labels_
+    #print the clusters
+    fig = go.Figure()
+    fig = px.scatter(x=dfdiff.easting, y=dfdiff.delta_elevation, color=dfdiff.cluster)
+    fig.update_layout(title="Clusters(DBSCAN) at"+str(location))
+    fig.show()
+
+
+    
 
 
 ########################################################################################################################################################################################################################################################################### #
@@ -230,7 +257,7 @@ for x in norths_to_inspect:
         data = pd.concat([cross_section_t1, cross_section_t2], ignore_index=True)
         fig = go.Figure()
         fig = px.scatter(x=data.easting, y=data.elevation, color=data.dataset)
-        fig.update_layout(title="Cheby1",
+        fig.update_layout(title="Cheby1 filter at "+ str(location),
                          xaxis_title='Easting (m)',
                          yaxis_title='Elevation (m)') # display the resulting smoothed elevations
 
@@ -255,7 +282,7 @@ for x in norths_to_inspect:
 
         fig = go.Figure()
         fig = px.scatter(x=dfdiff_new.easting, y=dfdiff_new.delta_elevation)
-        fig.update_layout(title="new volume change",
+        fig.update_layout(title="volume change after filter at"+str(location),
                         xaxis_title='Easting (m)',
                         yaxis_title='Elevation (m)') 
 
