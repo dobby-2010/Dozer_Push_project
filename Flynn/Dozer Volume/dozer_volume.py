@@ -17,6 +17,9 @@ from sklearn.pipeline import make_pipeline
 from numpy import where
 from sklearn.cluster import DBSCAN
 from pandas.testing import assert_frame_equal
+from sklearn import metrics
+
+
 
 
 ##################################################################################################################################
@@ -58,8 +61,129 @@ def calculate_volume(rows, columns, result):
     return sum(cuboid_volumes_pos) + (-1 * sum(cuboid_volumes_neg))
 
 
+
 #---------------------------------------------------------------------
-def remove_errors()
+def remove_errors(data_1, data_2,elevation_limit= 4.0 ):
+    """This function removes any points which are considered invalid and anomolies:
+
+    Args:
+        data_1 (_type_): _description_
+        data_2 (_type_): _description_
+        elevation_limit (float): This limit is the distance for which the elevation between surface 1 and surface
+        2 is considered unreasonible.
+
+    Raises:
+        Exception: _description_
+
+    Returns:
+        data with points which have been deemed to be incorrect/inaccurate removed
+    """
+    data_1["dataset"] = "t1"
+    data_2["dataset"] = "t2"
+    data_full = pd.concat([data_1, data_2], ignore_index=True)
+    data_diff_full = data_1[["easting", "northing"]]
+    data_diff_full["elevation"] = data_1["elevation"] - data_2["elevation"] 
+    
+    #find all initial locaitons for where we 
+    norths_to_inspect = []
+    for i in data_diff_full["northing"].unique():
+        x = data_diff_full.loc[
+            (data_diff_full["northing"] == i)
+            & ((data_diff_full["elevation"] < -elevation_limit) | ((data_diff_full["elevation"] > elevation_limit))),
+            :,
+        ]
+        if not x.empty:
+            norths_to_inspect.append(i)
+
+    for location in norths_to_inspect:
+        df1 = data_full[data_full["northing"]] == location #Identify all points at specfic northing
+        cs1 = df1[df1["dataset"] == "t1"]    #cross section 1
+        cs2 = df1[df1["dataset"] == "t2"]    #cross section 2
+        df = pd.concat([cs1, cs2], ignore_index=True)               #data
+        dfdiff = cs1[["easting", "northing"]].reset_index(drop=True) #data_diff
+        dfdiff["delta_elevation"] = cs1["elevation"].reset_index(drop=True) - cs2["elevation"].reset_index(drop=True)
+        
+        #use cluster analysis to determine if any sections are 
+        #using DBSCAN as a cluster technique
+        X = dfdiff
+
+        #Optiizing the parameters
+        # Defining the list of hyperparameters to try
+        eps_list=np.arange(start=0.1, stop=10, step=0.1)
+        min_sample_list=np.arange(start=2, stop=5, step=1)
+
+        #setup the silhouette list
+        silhouette_coefficients = []
+        eps_coefficients = []
+        min_samp_list = []
+
+        #create dataframe to store the silhouette parameters for each trial"
+        silhouette_scores_data=pd.DataFrame()
+        sil_score= 0  #sets the first sil score to zero
+        for eps_trial in eps_list:
+            for min_sample_trial in min_sample_list:
+                clustering = DBSCAN(eps=eps_trial, min_samples=min_sample_trial).fit(X)
+                #storing the labels formed by the DBSCAN
+                labels = clustering.labels_ 
+       
+                #measure the peformace of dbscan algo
+                #idenfitying which points make up our 'core points'
+                core_samples = np.zeros_like(labels, dtype=bool)
+                core_samples[clustering.core_sample_indices_] = True
+        
+
+                #Calculating "the number of clusters"
+                n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+                if n_clusters_ > 0:
+            
+                    if len(np.unique(labels)) > 1: #check is lebels if greater than 1 which is has to be. IF not then likely all zeros and not useful anyway
+                        sil_score_new = metrics.silhouette_score(X, labels)
+                        
+                    else:
+                        continue
+                    
+                    if sil_score_new > sil_score:       #checks if new silhouette score is greater than previous, if so make it the greatest score. This is to find the greatest silhouse score possible and its corresponding values
+                        sil_score = sil_score_new
+                        eps_best = eps_trial
+                        min_sample_best  = min_sample_trial
+                        silhouette_scores_data = silhouette_scores_data.append(pd.DataFrame(data=[[sil_score, eps_best, min_sample_best]], columns=['Best Silhouette Score', 'Optimal EPS', 'Optimal Minimal Sample Score']))
+                
+                else:
+                    continue
+        
+
+        db = clustering = DBSCAN(eps=eps_best, min_samples=min_sample_best).fit(X)  #use min samples = 4
+       #add the cluster labels to the dfdiff dataframe 
+        dfdiff["cluster"] = db.labels_
+        ########################################################################################################################################################################################################################################################################### #
+        #Irterate through each cluster if any part of the cluster is outside the limit then add the northing to a list
+        ###################################################################################################################################################################################################################################################################
+        #set a limit for which the elevation is too great for it not to be an error
+        elevation_limit = 3.5
+        index_list = []
+        data_update = cs1.reset_index(drop=True) #T1 is updating the old surface, drop=True means that we reset the index, if we wanna use the original indexs remove this 
+        for cluster_number in dfdiff["cluster"].unique():
+            cl1 = dfdiff[dfdiff["cluster"] == cluster_number]   #isolate all points connected to this specific cluster
+            #remote previous values from index list
+            index_list = []
+            #find the average elevation for this specific cluster
+            elevation_avg = cl1['delta_elevation'].mean()
+    
+            #check to see if this elevtion is too great
+            if elevation_avg*elevation_avg >= elevation_limit*elevation_limit:
+                locations_1 = cl1.iloc[:,[0,1]]
+        
+                #dataframe of locations for which need there elevation wiped
+                for easting_change in locations_1['easting']:
+                    for northing_change in locations_1["northing"]:
+                
+                        #this will find the index locaions for each easing and nothing found above
+                        index_change = data_update[data_update["easting"] == easting_change]
+                        index_change_1 = index_change[index_change['northing'] == northing_change]
+                        index_list.append(index_change_1.index.tolist())
+                
+
+
 
 
 # ----------------------------------------------------------------
