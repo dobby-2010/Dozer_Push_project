@@ -36,3 +36,8 @@ z00 - (z00)/2 + (z10)/2 - (z00)/2 + (z01)/2 + (z00)/4 - (z10)/4 - (z01)/4 + (z11
 (z00)/4 + (z10)/4 + (z01)/4 + (z11)/4
 
 mean(z00 + z01 + z10 + z11)
+
+#DBSCAN
+DBSCAN (Density-Based Spatial CLustering of Applications with Noise) is an machine learning technique used to identify clusters of data.
+https://medium.com/@tarammullin/dbscan-parameter-estimation-ff8330e3a3bd
+https://medium.com/@tarammullin/dbscan-2788cfce9389
