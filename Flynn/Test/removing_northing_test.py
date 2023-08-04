@@ -6,6 +6,9 @@ from sklearn import metrics
 from sklearn.cluster import DBSCAN
 import plotly.graph_objects as go
 import plotly.express as px
+from mpl_toolkits import mplot3d
+import numpy as np
+import matplotlib.pyplot as plt
 
 inaccurate_northings = []
 
@@ -15,7 +18,7 @@ data_1.columns = ["easting", "northing", "elevation"]
 data_2 = pd.read_csv("CE_36_B03-202305040800.csv")
 data_2.columns = ["easting", "northing", "elevation"]
 
-elevation_limit = 4.0
+elevation_limit = 6.0
 
 data_1["dataset"] = "t1"
 data_2["dataset"] = "t2"
@@ -23,7 +26,7 @@ data_full = pd.concat([data_1, data_2], ignore_index=True)
 data_diff_full = data_1[["easting", "northing"]]
 data_diff_full["elevation"] = data_1["elevation"] - data_2["elevation"]
 
-# find all initial locations for where we
+# find all initial locations for where we need to make changes
 norths_to_inspect = []
 for i in data_diff_full["northing"].unique():
     x = data_diff_full.loc[
@@ -58,6 +61,10 @@ for x in norths_to_inspect:
     eps_coefficients = []
     min_samp_list = []
 
+#####################################################################################################################
+# This section is for the dbscan parameters
+
+
     # create dataframe to store the silhouette parameters for each trial"
     silhouette_scores_data = pd.DataFrame()
     sil_score = 0  # sets the first sil score to zero
@@ -91,6 +98,7 @@ for x in norths_to_inspect:
 
             else:
                 continue
+####################################################################################################################
 
     db = clustering = DBSCAN(eps=eps_best, min_samples=min_sample_best).fit(X)  # use min samples = 4
     # add the cluster labels to the dfdiff dataframe
@@ -114,6 +122,7 @@ for x in norths_to_inspect:
     northing_number += 1
 data_1_updated = data_1.copy()    
 for northing_remove in inaccurate_northings:
+
     data_1_updated = data_1_updated.loc[data_1_updated['northing'] != northing_remove]
 
     
@@ -121,8 +130,8 @@ data_1['version'] = 'before changes'
 data_1_updated['version'] = 'after changes'
 data_full_updated = pd.concat([data_1, data_1_updated], ignore_index=True)
 fig = go.Figure()
-fig = px.scatter_3d( x=data_full_updated["easting"], y=data_full_updated["northing"], z=data_full_updated["elevation"], color=data_full_updated["version"]
-        )
+fig = px.scatter_3d( x=data_full_updated["easting"], y=data_full_updated["northing"], z=data_full_updated["elevation"], color=data_full_updated["version"])
 fig.show()
 
 ...
+

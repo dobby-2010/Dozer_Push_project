@@ -82,7 +82,7 @@ l11 = 7516722.99
 l12 = 7516720.99
 l13 = 7516721.99
 #select a location
-location = l1
+location = l2
 
 
 df1 = data_full[data_full["northing"] == location]
@@ -164,7 +164,7 @@ for eps_trial in eps_list:
                 min_sample_best  = min_sample_trial
                 silhouette_scores_data = silhouette_scores_data.append(pd.DataFrame(data=[[sil_score, eps_best, min_sample_best]], columns=['Best Silhouette Score', 'Optimal EPS', 'Optimal Minimal Sample Score']))
                 #print(silhouette_coefficients)
-                #print(silhouette_scores_data)
+                print(silhouette_scores_data)
         else:
             continue
         
@@ -222,7 +222,7 @@ for cluster_number in dfdiff["cluster"].unique():
 
         #check if there are any clusters which fit the description
         if len(index_list) > 1:
-            print(cluster_number)
+            
             #We need the values either side of the points which have been removed.#lets say were looking for 3 points either side
             varaince = 0 #how many points either side
             min_update_value = min(index_list) - varaince
