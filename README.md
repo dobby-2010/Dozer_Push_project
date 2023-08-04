@@ -30,7 +30,7 @@ $$\int_{y=0}^1 \int_{x=0}^1 f(x,y) dx\,dy\ = \frac{1}{4} (z_{(0,0)} + z_{(0,1)} 
 Now, $\frac{1}{4} (z_{(0,0)} + z_{(0,1)} + z_{(1,0)} + z_{(1,1)})$ is the mean of the delta elevations on each corner of the unit square. Therefore, to determine the total volume moved over the 15 minute period, we find the delta surface for a 1m by 1m grid take the mean of the four delta elevations and do this for each unque square along the easting-northing plane. 
 
 
-#DBSCAN
+# DBSCAN
 DBSCAN (Density-Based Spatial CLustering of Applications with Noise) is an machine learning technique used to identify clusters of data.
 https://medium.com/@tarammullin/dbscan-parameter-estimation-ff8330e3a3bd
 https://medium.com/@tarammullin/dbscan-2788cfce9389
