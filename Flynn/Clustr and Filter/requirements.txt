@@ -3,4 +3,4 @@ numpy==1.23.5
 pandas==1.5.2
 pyodbc==4.0.35
 scikit_learn==1.2.0
-setuptools==65.5.0
+setuptools==65.5.1
