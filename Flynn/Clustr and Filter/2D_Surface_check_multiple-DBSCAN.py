@@ -241,8 +241,7 @@ for x in norths_to_inspect:
         for i, row in enumerate(N): # loop through all possible permutations of the 2 parameters
             for j, item in enumerate(Wn):
                 b, a = cheby1(N=row, Wn=item, rp=21) # parameters define a & b
-                elva1 = pd.DataFrame( filtfilt(b, a, cross_section_t2.loc[:, "elevation"].values, padlen = 5)
-                ).loc[:, 0]
+                elva1 = pd.DataFrame( filtfilt(b, a, cross_section_t2.loc[:, "elevation"].values, padlen = 5) ).loc[:, 0]
                 cross_section_t2_new.loc[min_update_value:max_update_value, "elevation"] = elva1.loc[min_update_value:max_update_value]    # a and b determine the smoothing of elevations
                 delta_elevation = cross_section_t1["elevation"] -  cross_section_t2_new["elevation"]   # compare new elevations to the original
                 loss_fn = abs(delta_elevation).sum() # my loss function here is just the sum of the difference
@@ -257,9 +256,7 @@ for x in norths_to_inspect:
         data = pd.concat([cross_section_t1, cross_section_t2], ignore_index=True)
         fig = go.Figure()
         fig = px.scatter(x=data.easting, y=data.elevation, color=data.dataset)
-        fig.update_layout(title="Cheby1 filter at "+ str(location),
-                         xaxis_title='Easting (m)',
-                         yaxis_title='Elevation (m)') # display the resulting smoothed elevations
+        fig.update_layout(title="Cheby1 filter at "+ str(location), xaxis_title="Easting (m)", yaxis_title="Elevation (m)") # display the resulting smoothed elevations
 
         fig.show()
 
@@ -278,8 +275,6 @@ for x in norths_to_inspect:
         dfdiff_new = cross_section_t1[["easting", "northing"]].reset_index(drop=True) #data_diff
         dfdiff_new["delta_elevation"] = cross_section_t1["elevation"].reset_index(drop=True) - cross_section_t2["elevation"].reset_index(drop=True)
 
-
-
         fig = go.Figure()
         fig = px.scatter(x=dfdiff_new.easting, y=dfdiff_new.delta_elevation)
         fig.update_layout(title="volume change after filter at"+str(location),
@@ -288,4 +283,4 @@ for x in norths_to_inspect:
 
     print(northing_number)
     northing_number= 1 + northing_number
-
+...
