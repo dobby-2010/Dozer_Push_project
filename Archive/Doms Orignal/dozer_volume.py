@@ -8,6 +8,9 @@ from numpy import unique
 from numpy import where
 from sklearn.cluster import DBSCAN
 from pandas.testing import assert_frame_equal
+from sklearn import metrics
+
+
 
 
 ##################################################################################################################################
@@ -61,100 +64,123 @@ def clean_cross_sections(
     distribution_limit=4,
     eps=3,
     min_samples=4,
+    elevation_limit=6.0
 ):
     data_1["dataset"] = "t1"
     data_2["dataset"] = "t2"
+   
+    #combine data
     data_full = pd.concat([data_1, data_2], ignore_index=True)
+    data_diff_full = data_1[["easting", "northing"]]
+    data_diff_full["elevation"] = data_1["elevation"] - data_2["elevation"]
 
-    data_full["cluster"] = np.nan
-    norths = data_full.northing.unique()
-    features = []
-    for k in tqdm(norths, total=len(data_full.northing.unique()), desc="Filter Cross Sections"):
-        # Create parameters
+    #create a copy of data_1 this will be able to be used to update and then compare with data_1 
+    data_1_updated = data_1.copy()
 
-        # Break into cross sections
-        cross_section = data_full[data_full["northing"] == k]
-        cross_section_t1 = cross_section[cross_section["dataset"] == "t1"]
-        cross_section_t2 = cross_section[cross_section["dataset"] == "t2"]
-        data_diff = cross_section_t1[["easting", "northing"]].reset_index(drop=True)
-        data_diff["delta_elevation"] = cross_section_t1["elevation"].reset_index(drop=True) - cross_section_t2[
-            "elevation"
-        ].reset_index(drop=True)
-        # only select points in cross section where there is a dffference in elevation
-        cross_section_worthy = cross_section[
-            cross_section["easting"].isin(list(data_diff[data_diff["delta_elevation"] != 0].easting))
+    # Find all initial locations for where we need to make changes
+    norths_to_inspect = []
+    for i in data_diff_full["northing"].unique():
+        x = data_diff_full.loc[
+            (data_diff_full["northing"] == i)
+            & ((data_diff_full["elevation"] < -elevation_limit) | (data_diff_full["elevation"] > elevation_limit)),
+            :,
         ]
-        if cross_section_worthy.empty or (len(cross_section_worthy) < 4):
-            continue
+        if not x.empty:
+            norths_to_inspect.append(i)
 
-        elevation_centres = []
-        # process to decide if even worth interpolating for each dataset
-        for i in cross_section_worthy["dataset"].unique():
-            df_temp = cross_section_worthy[cross_section_worthy["dataset"] == i].reset_index(drop=True)
-            df_index = cross_section_worthy[cross_section_worthy["dataset"] == i].copy()
-            elevation_centres.append(
-                (i, stat.median(cross_section_worthy.loc[cross_section_worthy["dataset"] == i, "elevation"]))
-            )
-            # write process to find distance from point to point in this dataset
-            import math
+    #loop through all clusters that are considered to be inaccurate
+    for x in norths_to_inspect:
 
-            dist = []
-            for index, row in df_temp.iterrows():
-                if index < len(df_temp) - 2:
-                    dist.append(
-                        math.dist(
-                            df_temp.loc[index][["easting", "elevation"]],
-                            df_temp.loc[index + 1][["easting", "elevation"]],
-                        )
-                    )
-                else:
-                    continue
-            max_dist = max_dist_tolerance * math.dist(
-                df_temp.iloc[0][["easting", "elevation"]], df_temp.iloc[-1][["easting", "elevation"]]
-            )
+        df1 = data_full.loc[data_full["northing"] == x, :]  # Identify all points at specific northing
+        cs1 = df1.loc[df1["dataset"] == "t1"]  # cross section 1
+        cs2 = df1.loc[df1["dataset"] == "t2"]  # cross section 2
+        df = pd.concat([cs1, cs2], ignore_index=True)  # data
+        dfdiff = cs1[["easting", "northing"]].reset_index(drop=True)  # data_diff
+        dfdiff["delta_elevation"] = cs1["elevation"].reset_index(drop=True) - cs2["elevation"].reset_index(drop=True)
 
-            if stat.stdev(df_temp.elevation) < max_stddev or sum(dist) < max_dist:
-                continue
-            else:
-                model = DBSCAN(eps=eps, min_samples=min_samples)
-                yhat = model.fit_predict(df_index[["elevation", "easting"]])
-                clusters = unique(yhat)
-                for cluster in clusters:
-                    # get row indexes for samples with this cluster
-                    df_index["cluster"] = yhat
-                    row_ix = where(yhat == cluster)
+        # use cluster analysis to split line into sections 
+        # using DBSCAN as a cluster technique
+        X = dfdiff
 
-                    # find the centroid of this cluster
-                    centroid_elevation = df_index[["elevation", "easting"]].to_numpy()[row_ix, 0].mean()
-                    other_surface_elevation = cross_section_worthy[
-                        cross_section_worthy["dataset"] != i
-                    ].elevation.mean()
-                    if (centroid_elevation < other_surface_elevation - distribution_limit) or (
-                        centroid_elevation > other_surface_elevation + distribution_limit
-                    ):
-                        row_ix = list(df_index.iloc[row_ix]["elevation"].index)
-                        df_index.loc[row_ix, "elevation"] = np.nan
+        # Optiizing the parameters
+        # Defining the list of hyperparameters to try
+        eps_list = np.arange(start=0.1, stop=10, step=0.1)
+        min_sample_list = np.arange(start=2, stop=5, step=1)
 
-                if df_index.elevation.isna().all():
-                    # just make this the same so that we don't count this cross section
-                    df_index.loc[:, "elevation"] = cross_section_worthy[cross_section_worthy["dataset"] != i].loc[
-                        :, "elevation"
-                    ]
-                    update_values = list(df_index.index)
-                    data_full.loc[update_values, "elevation"] = df_index["elevation"].values
-                else:
-                    # In this area begin interpolation
-                    df_index.loc[:, "elevation"] = df_index.loc[:, "elevation"].interpolate(method="linear")
-                    b, a = cheby1(N=3, Wn=0.94, rp=21)
-                    df_index.loc[:, "elevation"] = filtfilt(b, a, df_index.loc[:, "elevation"].values)
-                    update_values = list(df_index.index)
-                    data_full.loc[update_values, :] = df_index
+        # setup the silhouette list
+        silhouette_coefficients = []
+        eps_coefficients = []
+        min_samp_list = []
 
-    # don't need this column anymore
-    data_full = data_full.drop(["cluster"], axis=1)
+    #####################################################################################################################
+    # This section is for the dbscan parameters
 
-    dataset_1 = data_full[data_full["dataset"] == "t1"].reset_index(drop=True)
-    dataset_2 = data_full[data_full["dataset"] == "t2"].reset_index(drop=True)
+
+        # create dataframe to store the silhouette parameters for each trial"
+        silhouette_scores_data = pd.DataFrame()
+        sil_score = 0  # sets the first sil score to zero
+        for eps_trial in eps_list:
+            for min_sample_trial in min_sample_list:
+            
+                clustering = DBSCAN(eps=eps_trial, min_samples=min_sample_trial).fit(X)
+                # storing the labels formed by the DBSCAN
+                labels = clustering.labels_
+
+                # measure the performance of DBSCAN algo
+                # identifying which points make up our 'core points'
+                core_samples = np.zeros_like(labels, dtype=bool)
+                core_samples[clustering.core_sample_indices_] = True
+
+                # Calculating "the number of clusters"
+                n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+                if n_clusters_ > 0:
+
+                    if len(np.unique(labels)) > 1:  # check if labels is greater than 1 which it has to be. If not, then likely all zeros and not useful anyway
+                        sil_score_new = metrics.silhouette_score(X, labels)
+
+                    else:
+                        continue
+
+                    if sil_score_new > sil_score:  # checks if new silhouette score is greater than previous, if so make it the greatest score. This is to find the greatest silhouette score possible and its corresponding values
+                        sil_score = sil_score_new
+                        eps_best = eps_trial
+                        min_sample_best = min_sample_trial
+                        silhouette_scores_data = silhouette_scores_data.append(
+                            pd.DataFrame(data=[[sil_score, eps_best, min_sample_best]], columns=['Best Silhouette Score', 'Optimal EPS', 'Optimal Minimal Sample Score']))
+
+                    else:
+                        continue
+
+        db = clustering = DBSCAN(eps=eps_best, min_samples=min_sample_best).fit(X)  # use min samples = 4
+        # add the cluster labels to the dfdiff dataframe
+        dfdiff["cluster"] = db.labels_
+
+        # Irterate through each cluster if any part of the cluster is outside the limit then add the northing to a list
+        # set a limit for which the elevation is too great for it not to be an error
+        elevation_limit = 3
+        index_list = []
+        data_update = cs1.reset_index(drop=True)  # T1 is updating the old surface, drop=True means that we reset the index, if we wanna use the original indexes remove this
+
+    
+        cs1_updated = cs1.copy()
+        # Iterate through each cluster and check if the average elevation is too great
+        for cluster_number in dfdiff["cluster"].unique():
+            cl1 = dfdiff[dfdiff["cluster"] == cluster_number]
+            elevation_avg = cl1['delta_elevation'].mean()
+
+            if abs(elevation_avg) >= elevation_limit:
+
+                # Find the corresponding cluster in data_2
+                cl2 = cs2[(cs2["dataset"] == "t2")]
+                eastings_to_update = cl1[abs(cl1['delta_elevation']) >= elevation_limit]['easting'].values
+            
+                # Update the corresponding points in data_1_updated with values from data_2
+                for easting in eastings_to_update:
+                    print(easting)
+                    data_1_updated.loc[(data_1_updated["northing"] == x) & (data_1_updated["easting"] == easting), "elevation"] = cl2[cl2['easting'] == easting]['elevation'].values[0]
+
+    dataset_1 = data_1_updated
+    dataset_2 = data_2
 
     return dataset_1, dataset_2
 
@@ -233,7 +259,7 @@ assert_frame_equal(data_1[["easting", "northing"]], data_2[["easting", "northing
 # assert_frame_equal(data_1[["elevation"]], data_2[["elevation"]]) throws error. Therefore, they are perfectly aligned.
 
 # Clean up surfaces
-data_1, data_2 = clean_cross_sections_long(
+data_1, data_2 = clean_cross_sections(
     data_1, data_2
 )  # this is for long diff like 24hrs # clean_cross_sections(data_1, data_2) # this is for 15min diff
 

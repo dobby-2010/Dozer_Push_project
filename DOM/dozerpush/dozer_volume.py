@@ -20,8 +20,6 @@ from pandas.testing import assert_frame_equal
 from sklearn import metrics
 
 
-
-
 ##################################################################################################################################
 ############## Define functions ##################################################################################################
 def calculate_volume(rows, columns, result):
@@ -61,9 +59,8 @@ def calculate_volume(rows, columns, result):
     return sum(cuboid_volumes_pos) + (-1 * sum(cuboid_volumes_neg))
 
 
-
-#---------------------------------------------------------------------
-def remove_errors(data_1, data_2,elevation_limit= 4.0 ):
+# ---------------------------------------------------------------------
+def remove_errors(data_1, data_2, elevation_limit=4.0):
     """This function removes any points which are considered invalid and anomolies:
 
     Args:
@@ -82,108 +79,131 @@ def remove_errors(data_1, data_2,elevation_limit= 4.0 ):
     data_2["dataset"] = "t2"
     data_full = pd.concat([data_1, data_2], ignore_index=True)
     data_diff_full = data_1[["easting", "northing"]]
-    data_diff_full["elevation"] = data_1["elevation"] - data_2["elevation"] 
-    
-    #find all initial locaitons for where we 
+    data_diff_full["elevation"] = data_1["elevation"] - data_2["elevation"]
+
+    # find all initial locaitons for where we
     norths_to_inspect = []
     for i in data_diff_full["northing"].unique():
         x = data_diff_full.loc[
             (data_diff_full["northing"] == i)
-            & ((data_diff_full["elevation"] < -elevation_limit) | ((data_diff_full["elevation"] > elevation_limit))),
+            & (
+                (data_diff_full["elevation"] < -elevation_limit)
+                | ((data_diff_full["elevation"] > elevation_limit))
+            ),
             :,
         ]
         if not x.empty:
             norths_to_inspect.append(i)
 
     for location in norths_to_inspect:
-        df1 = data_full[data_full["northing"]] == location #Identify all points at specfic northing
-        cs1 = df1[df1["dataset"] == "t1"]    #cross section 1
-        cs2 = df1[df1["dataset"] == "t2"]    #cross section 2
-        df = pd.concat([cs1, cs2], ignore_index=True)               #data
-        dfdiff = cs1[["easting", "northing"]].reset_index(drop=True) #data_diff
-        dfdiff["delta_elevation"] = cs1["elevation"].reset_index(drop=True) - cs2["elevation"].reset_index(drop=True)
-        
-        #use cluster analysis to determine if any sections are 
-        #using DBSCAN as a cluster technique
+        df1 = (
+            data_full[data_full["northing"]] == location
+        )  # Identify all points at specfic northing
+        cs1 = df1[df1["dataset"] == "t1"]  # cross section 1
+        cs2 = df1[df1["dataset"] == "t2"]  # cross section 2
+        df = pd.concat([cs1, cs2], ignore_index=True)  # data
+        dfdiff = cs1[["easting", "northing"]].reset_index(drop=True)  # data_diff
+        dfdiff["delta_elevation"] = cs1["elevation"].reset_index(drop=True) - cs2[
+            "elevation"
+        ].reset_index(drop=True)
+
+        # use cluster analysis to determine if any sections are
+        # using DBSCAN as a cluster technique
         X = dfdiff
 
-        #Optiizing the parameters
+        # Optiizing the parameters
         # Defining the list of hyperparameters to try
-        eps_list=np.arange(start=0.1, stop=10, step=0.1)
-        min_sample_list=np.arange(start=2, stop=5, step=1)
+        eps_list = np.arange(start=0.1, stop=10, step=0.1)
+        min_sample_list = np.arange(start=2, stop=5, step=1)
 
-        #setup the silhouette list
+        # setup the silhouette list
         silhouette_coefficients = []
         eps_coefficients = []
         min_samp_list = []
 
-        #create dataframe to store the silhouette parameters for each trial"
-        silhouette_scores_data=pd.DataFrame()
-        sil_score= 0  #sets the first sil score to zero
+        # create dataframe to store the silhouette parameters for each trial"
+        silhouette_scores_data = pd.DataFrame()
+        sil_score = 0  # sets the first sil score to zero
         for eps_trial in eps_list:
             for min_sample_trial in min_sample_list:
                 clustering = DBSCAN(eps=eps_trial, min_samples=min_sample_trial).fit(X)
-                #storing the labels formed by the DBSCAN
-                labels = clustering.labels_ 
-       
-                #measure the peformace of dbscan algo
-                #idenfitying which points make up our 'core points'
+                # storing the labels formed by the DBSCAN
+                labels = clustering.labels_
+
+                # measure the peformace of dbscan algo
+                # idenfitying which points make up our 'core points'
                 core_samples = np.zeros_like(labels, dtype=bool)
                 core_samples[clustering.core_sample_indices_] = True
-        
 
-                #Calculating "the number of clusters"
+                # Calculating "the number of clusters"
                 n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
                 if n_clusters_ > 0:
-            
-                    if len(np.unique(labels)) > 1: #check is lebels if greater than 1 which is has to be. IF not then likely all zeros and not useful anyway
+                    if (
+                        len(np.unique(labels)) > 1
+                    ):  # check is lebels if greater than 1 which is has to be. IF not then likely all zeros and not useful anyway
                         sil_score_new = metrics.silhouette_score(X, labels)
-                        
+
                     else:
                         continue
-                    
-                    if sil_score_new > sil_score:       #checks if new silhouette score is greater than previous, if so make it the greatest score. This is to find the greatest silhouse score possible and its corresponding values
+
+                    if (
+                        sil_score_new > sil_score
+                    ):  # checks if new silhouette score is greater than previous, if so make it the greatest score. This is to find the greatest silhouse score possible and its corresponding values
                         sil_score = sil_score_new
                         eps_best = eps_trial
-                        min_sample_best  = min_sample_trial
-                        silhouette_scores_data = silhouette_scores_data.append(pd.DataFrame(data=[[sil_score, eps_best, min_sample_best]], columns=['Best Silhouette Score', 'Optimal EPS', 'Optimal Minimal Sample Score']))
-                
+                        min_sample_best = min_sample_trial
+                        silhouette_scores_data = silhouette_scores_data.append(
+                            pd.DataFrame(
+                                data=[[sil_score, eps_best, min_sample_best]],
+                                columns=[
+                                    "Best Silhouette Score",
+                                    "Optimal EPS",
+                                    "Optimal Minimal Sample Score",
+                                ],
+                            )
+                        )
+
                 else:
                     continue
-        
 
-        db = clustering = DBSCAN(eps=eps_best, min_samples=min_sample_best).fit(X)  #use min samples = 4
-       #add the cluster labels to the dfdiff dataframe 
+        db = clustering = DBSCAN(eps=eps_best, min_samples=min_sample_best).fit(
+            X
+        )  # use min samples = 4
+        # add the cluster labels to the dfdiff dataframe
         dfdiff["cluster"] = db.labels_
         ########################################################################################################################################################################################################################################################################### #
-        #Irterate through each cluster if any part of the cluster is outside the limit then add the northing to a list
+        # Irterate through each cluster if any part of the cluster is outside the limit then add the northing to a list
         ###################################################################################################################################################################################################################################################################
-        #set a limit for which the elevation is too great for it not to be an error
+        # set a limit for which the elevation is too great for it not to be an error
         elevation_limit = 3.5
         index_list = []
-        data_update = cs1.reset_index(drop=True) #T1 is updating the old surface, drop=True means that we reset the index, if we wanna use the original indexs remove this 
+        data_update = cs1.reset_index(
+            drop=True
+        )  # T1 is updating the old surface, drop=True means that we reset the index, if we wanna use the original indexs remove this
         for cluster_number in dfdiff["cluster"].unique():
-            cl1 = dfdiff[dfdiff["cluster"] == cluster_number]   #isolate all points connected to this specific cluster
-            #remote previous values from index list
+            cl1 = dfdiff[
+                dfdiff["cluster"] == cluster_number
+            ]  # isolate all points connected to this specific cluster
+            # remote previous values from index list
             index_list = []
-            #find the average elevation for this specific cluster
-            elevation_avg = cl1['delta_elevation'].mean()
-    
-            #check to see if this elevtion is too great
-            if elevation_avg*elevation_avg >= elevation_limit*elevation_limit:
-                locations_1 = cl1.iloc[:,[0,1]]
-        
-                #dataframe of locations for which need there elevation wiped
-                for easting_change in locations_1['easting']:
+            # find the average elevation for this specific cluster
+            elevation_avg = cl1["delta_elevation"].mean()
+
+            # check to see if this elevtion is too great
+            if elevation_avg * elevation_avg >= elevation_limit * elevation_limit:
+                locations_1 = cl1.iloc[:, [0, 1]]
+
+                # dataframe of locations for which need there elevation wiped
+                for easting_change in locations_1["easting"]:
                     for northing_change in locations_1["northing"]:
-                
-                        #this will find the index locaions for each easing and nothing found above
-                        index_change = data_update[data_update["easting"] == easting_change]
-                        index_change_1 = index_change[index_change['northing'] == northing_change]
+                        # this will find the index locaions for each easing and nothing found above
+                        index_change = data_update[
+                            data_update["easting"] == easting_change
+                        ]
+                        index_change_1 = index_change[
+                            index_change["northing"] == northing_change
+                        ]
                         index_list.append(index_change_1.index.tolist())
-                
-
-
 
 
 # ----------------------------------------------------------------
@@ -198,17 +218,17 @@ def clean_cross_sections(
     distribution_limit=3,
     eps=3,
     min_samples=4,
-    elevation_limit=6.0
+    elevation_limit=6.0,
 ):
     data_1["dataset"] = "t1"
     data_2["dataset"] = "t2"
-   
-    #combine data
+
+    # combine data
     data_full = pd.concat([data_1, data_2], ignore_index=True)
     data_diff_full = data_1[["easting", "northing"]]
     data_diff_full["elevation"] = data_1["elevation"] - data_2["elevation"]
 
-    #create a copy of data_1 this will be able to be used to update and then compare with data_1 
+    # create a copy of data_1 this will be able to be used to update and then compare with data_1
     data_1_updated = data_1.copy()
 
     # Find all initial locations for where we need to make changes
@@ -216,23 +236,29 @@ def clean_cross_sections(
     for i in data_diff_full["northing"].unique():
         x = data_diff_full.loc[
             (data_diff_full["northing"] == i)
-            & ((data_diff_full["elevation"] < -elevation_limit) | (data_diff_full["elevation"] > elevation_limit)),
+            & (
+                (data_diff_full["elevation"] < -elevation_limit)
+                | (data_diff_full["elevation"] > elevation_limit)
+            ),
             :,
         ]
         if not x.empty:
             norths_to_inspect.append(i)
 
-    #loop through all clusters that are considered to be inaccurate
+    # loop through all clusters that are considered to be inaccurate
     for x in norths_to_inspect:
-
-        df1 = data_full.loc[data_full["northing"] == x, :]  # Identify all points at specific northing
+        df1 = data_full.loc[
+            data_full["northing"] == x, :
+        ]  # Identify all points at specific northing
         cs1 = df1.loc[df1["dataset"] == "t1"]  # cross section 1
         cs2 = df1.loc[df1["dataset"] == "t2"]  # cross section 2
         df = pd.concat([cs1, cs2], ignore_index=True)  # data
         dfdiff = cs1[["easting", "northing"]].reset_index(drop=True)  # data_diff
-        dfdiff["delta_elevation"] = cs1["elevation"].reset_index(drop=True) - cs2["elevation"].reset_index(drop=True)
+        dfdiff["delta_elevation"] = cs1["elevation"].reset_index(drop=True) - cs2[
+            "elevation"
+        ].reset_index(drop=True)
 
-        # use cluster analysis to split line into sections 
+        # use cluster analysis to split line into sections
         # using DBSCAN as a cluster technique
         X = dfdiff
 
@@ -246,16 +272,14 @@ def clean_cross_sections(
         eps_coefficients = []
         min_samp_list = []
 
-    #####################################################################################################################
-    # This section is for the dbscan parameters
-
+        #####################################################################################################################
+        # This section is for the dbscan parameters
 
         # create dataframe to store the silhouette parameters for each trial"
         silhouette_scores_data = pd.DataFrame()
         sil_score = 0  # sets the first sil score to zero
         for eps_trial in eps_list:
             for min_sample_trial in min_sample_list:
-            
                 clustering = DBSCAN(eps=eps_trial, min_samples=min_sample_trial).fit(X)
                 # storing the labels formed by the DBSCAN
                 labels = clustering.labels_
@@ -268,24 +292,37 @@ def clean_cross_sections(
                 # Calculating "the number of clusters"
                 n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
                 if n_clusters_ > 0:
-
-                    if len(np.unique(labels)) > 1:  # check if labels is greater than 1 which it has to be. If not, then likely all zeros and not useful anyway
+                    if (
+                        len(np.unique(labels)) > 1
+                    ):  # check if labels is greater than 1 which it has to be. If not, then likely all zeros and not useful anyway
                         sil_score_new = metrics.silhouette_score(X, labels)
 
                     else:
                         continue
 
-                    if sil_score_new > sil_score:  # checks if new silhouette score is greater than previous, if so make it the greatest score. This is to find the greatest silhouette score possible and its corresponding values
+                    if (
+                        sil_score_new > sil_score
+                    ):  # checks if new silhouette score is greater than previous, if so make it the greatest score. This is to find the greatest silhouette score possible and its corresponding values
                         sil_score = sil_score_new
                         eps_best = eps_trial
                         min_sample_best = min_sample_trial
                         silhouette_scores_data = silhouette_scores_data.append(
-                            pd.DataFrame(data=[[sil_score, eps_best, min_sample_best]], columns=['Best Silhouette Score', 'Optimal EPS', 'Optimal Minimal Sample Score']))
+                            pd.DataFrame(
+                                data=[[sil_score, eps_best, min_sample_best]],
+                                columns=[
+                                    "Best Silhouette Score",
+                                    "Optimal EPS",
+                                    "Optimal Minimal Sample Score",
+                                ],
+                            )
+                        )
 
                     else:
                         continue
 
-        db = clustering = DBSCAN(eps=eps_best, min_samples=min_sample_best).fit(X)  # use min samples = 4
+        db = clustering = DBSCAN(eps=eps_best, min_samples=min_sample_best).fit(
+            X
+        )  # use min samples = 4
         # add the cluster labels to the dfdiff dataframe
         dfdiff["cluster"] = db.labels_
 
@@ -293,24 +330,30 @@ def clean_cross_sections(
         # set a limit for which the elevation is too great for it not to be an error
         elevation_limit = 3
         index_list = []
-        data_update = cs1.reset_index(drop=True)  # T1 is updating the old surface, drop=True means that we reset the index, if we wanna use the original indexes remove this
+        data_update = cs1.reset_index(
+            drop=True
+        )  # T1 is updating the old surface, drop=True means that we reset the index, if we wanna use the original indexes remove this
 
-    
         cs1_updated = cs1.copy()
         # Iterate through each cluster and check if the average elevation is too great
         for cluster_number in dfdiff["cluster"].unique():
             cl1 = dfdiff[dfdiff["cluster"] == cluster_number]
-            elevation_avg = cl1['delta_elevation'].mean()
+            elevation_avg = cl1["delta_elevation"].mean()
 
             if abs(elevation_avg) >= elevation_limit:
-
                 # Find the corresponding cluster in data_2
                 cl2 = cs2[(cs2["dataset"] == "t2")]
-                eastings_to_update = cl1[abs(cl1['delta_elevation']) >= elevation_limit]['easting'].values
-            
+                eastings_to_update = cl1[
+                    abs(cl1["delta_elevation"]) >= elevation_limit
+                ]["easting"].values
+
                 # Update the corresponding points in data_1_updated with values from data_2
                 for easting in eastings_to_update:
-                    data_1_updated.loc[(data_1_updated["northing"] == x) & (data_1_updated["easting"] == easting), "elevation"] = cl2[cl2['easting'] == easting]['elevation'].values[0]
+                    data_1_updated.loc[
+                        (data_1_updated["northing"] == x)
+                        & (data_1_updated["easting"] == easting),
+                        "elevation",
+                    ] = cl2[cl2["easting"] == easting]["elevation"].values[0]
 
     dataset_1 = data_1_updated
     dataset_2 = data_2
@@ -338,38 +381,55 @@ def clean_cross_sections_long_confirmed(
     for i in data_diff_full["northing"].unique():
         x = data_diff_full.loc[
             (data_diff_full["northing"] == i)
-            & ((data_diff_full["elevation"] < -1 * threshold) | ((data_diff_full["elevation"] > threshold))),
+            & (
+                (data_diff_full["elevation"] < -1 * threshold)
+                | ((data_diff_full["elevation"] > threshold))
+            ),
             :,
         ]
         if not x.empty:
             norths_to_inspect.append(i)
     for j in range(len(norths_to_inspect)):
         data_full_1 = data_full[data_full["northing"] == norths_to_inspect[j]]
-        cross_section_t1 = data_full_1[data_full_1["dataset"] == "t1"].reset_index(drop=True)
-        cross_section_t2 = data_full_1[data_full_1["dataset"] == "t2"].reset_index(drop=True)
+        cross_section_t1 = data_full_1[data_full_1["dataset"] == "t1"].reset_index(
+            drop=True
+        )
+        cross_section_t2 = data_full_1[data_full_1["dataset"] == "t2"].reset_index(
+            drop=True
+        )
         data = pd.concat([cross_section_t1, cross_section_t2], ignore_index=True)
 
         # reshape and make new df with easting and absolute delta elevation
         data_reshaped = data[data["dataset"] == "t1"].reset_index(drop=True)
         data_reshaped["absolute_delta_elevation"] = abs(
-            data_reshaped["elevation"] - data[data["dataset"] == "t2"]["elevation"].reset_index(drop=True)
+            data_reshaped["elevation"]
+            - data[data["dataset"] == "t2"]["elevation"].reset_index(drop=True)
         )
         data_reshaped = data_reshaped[["easting", "absolute_delta_elevation"]]
         # find when abs delta > 6
-        rows_of_interest = data_reshaped[data_reshaped["absolute_delta_elevation"] > threshold]
-        if not np.isnan(rows_of_interest[rows_of_interest.index < (data_reshaped.index.max() // 3)].index.max()):
+        rows_of_interest = data_reshaped[
+            data_reshaped["absolute_delta_elevation"] > threshold
+        ]
+        if not np.isnan(
+            rows_of_interest[
+                rows_of_interest.index < (data_reshaped.index.max() // 3)
+            ].index.max()
+        ):
             # data_reshaped[data_reshaped["easting"]== data_reshaped[data_reshaped["absolute_delta_elevation"] > 6].max()["easting"]].index[0] # returns index of max elev diff
             data_small_1 = data_full_1.loc[
                 data_full_1["easting"]
-                < data_reshaped[data_reshaped["absolute_delta_elevation"] > threshold].max()["easting"],
+                < data_reshaped[
+                    data_reshaped["absolute_delta_elevation"] > threshold
+                ].max()["easting"],
                 :,
             ]  # returns all rows where
             data_small_1.loc[data_small_1["dataset"] == "t1", "elevation"] = np.array(
                 data_small_1.loc[data_small_1["dataset"] == "t2", "elevation"]
             )
-            data_1.loc[data_small_1.loc[data_small_1["dataset"] == "t1", :].index.tolist(), "elevation"] = np.array(
-                data_small_1.loc[data_small_1["dataset"] == "t1", "elevation"]
-            )
+            data_1.loc[
+                data_small_1.loc[data_small_1["dataset"] == "t1", :].index.tolist(),
+                "elevation",
+            ] = np.array(data_small_1.loc[data_small_1["dataset"] == "t1", "elevation"])
 
     return data_1, data_2
 
@@ -415,10 +475,12 @@ def clean_slots(
     data_diff_full["elevation"] = data_1["elevation"] - data_2["elevation"]
 
     # cycles = pd.read_csv(".\\dozerpush\\test\\Result_5.csv") # 5 is for 29
-    #cycles = pd.read_csv(".\\dozerpush\\test\\Result_4.csv")
-    cycles = pd.read_csv("Result_5.csv")  # 4 is for 28
+    cycles = pd.read_csv(".\\Result_4.csv")
+
     # isolate strips of work
-    a = sorted(data_diff_full[data_diff_full["elevation"] != 0].northing.unique().tolist())
+    a = sorted(
+        data_diff_full[data_diff_full["elevation"] != 0].northing.unique().tolist()
+    )
     b = [x - a[i - 1] for i, x in enumerate(a)][1:]
     b.insert(0, 0.0)
     diff_norths = pd.DataFrame(b)
@@ -430,9 +492,11 @@ def clean_slots(
         if i + 1 == len(start_new_section):
             break
 
-        data_test = data_full[data_full["northing"].isin(a[start_new_section[i] : start_new_section[i + 1]])][
-            ["easting", "northing", "elevation"]
-        ].astype(np.float64)
+        data_test = data_full[
+            data_full["northing"].isin(
+                a[start_new_section[i] : start_new_section[i + 1]]
+            )
+        ][["easting", "northing", "elevation"]].astype(np.float64)
         X = data_test[["easting", "northing"]].values.reshape(-1, 2)
         Y = data_test["elevation"]
         # Find out who was working
@@ -441,7 +505,8 @@ def clean_slots(
         mn = np.min(data_test, axis=0)
         mx = np.max(data_test, axis=0)
         xx_pred, yy_pred = np.meshgrid(
-            np.linspace(mn[0], mx[0], int(mx[0] - mn[0] + 1)), np.linspace(mn[1], mx[1], int(mx[1] - mn[1] + 1))
+            np.linspace(mn[0], mx[0], int(mx[0] - mn[0] + 1)),
+            np.linspace(mn[1], mx[1], int(mx[1] - mn[1] + 1)),
         )
         model_viz = np.array([xx_pred.flatten(), yy_pred.flatten()]).T
         degree = 3
@@ -449,13 +514,22 @@ def clean_slots(
         # X_poly = poly.fit_transform(X)
         # lr_poly = LinearRegression()
         # lr_poly.fit(X_poly, Y)
-        model = make_pipeline(SplineTransformer(n_knots=4, degree=degree), Ridge(alpha=1e-3))
+        model = make_pipeline(
+            SplineTransformer(n_knots=4, degree=degree), Ridge(alpha=1e-3)
+        )
         model.fit(X, Y)
         predicted = model.predict(model_viz)
 
         # now plot / see what points would be removed by this method
         data_spline = pd.DataFrame(
-            np.array((xx_pred.flatten(), yy_pred.flatten(), predicted - threshold, predicted + threshold)).T,
+            np.array(
+                (
+                    xx_pred.flatten(),
+                    yy_pred.flatten(),
+                    predicted - threshold,
+                    predicted + threshold,
+                )
+            ).T,
             columns=[["easting", "northing", "lower_elevation", "upper_elevation"]],
         )
         data_spline.columns = ["_".join(a) for a in data_spline.columns.to_flat_index()]
@@ -464,10 +538,14 @@ def clean_slots(
         df_spline = pd.merge(data_spline, data_test, on=["easting", "northing"])
 
         # then update elevations to upper / lower limit of spline fit if outside this interval
-        df_spline.loc[df_spline["elevation"] < df_spline["lower_elevation"], "elevation"] = df_spline.loc[
+        df_spline.loc[
+            df_spline["elevation"] < df_spline["lower_elevation"], "elevation"
+        ] = df_spline.loc[
             df_spline["elevation"] < df_spline["lower_elevation"], "lower_elevation"
         ]
-        df_spline.loc[df_spline["elevation"] > df_spline["upper_elevation"], "elevation"] = df_spline.loc[
+        df_spline.loc[
+            df_spline["elevation"] > df_spline["upper_elevation"], "elevation"
+        ] = df_spline.loc[
             df_spline["elevation"] > df_spline["upper_elevation"], "upper_elevation"
         ]
 
@@ -483,7 +561,9 @@ def clean_slots(
             .all()
         ):
             df_spline.index = data_test.index
-            data_full.loc[df_spline.index, "elevation"] = df_spline.loc[df_spline.index, "elevation"]
+            data_full.loc[df_spline.index, "elevation"] = df_spline.loc[
+                df_spline.index, "elevation"
+            ]
             data_full.loc[df_spline.index, "dozer"] = dozer_code
             data_1 = data_full[data_full["dataset"] == "t1"]
             data_2 = data_full[data_full["dataset"] == "t2"]
@@ -491,6 +571,62 @@ def clean_slots(
             raise Exception
 
     return data_1, data_2
+
+
+def query_cycles(cycles, start_time, end_time):
+    """_summary_
+
+    Args:
+        cycles (_type_): _description_
+        start_time (_type_): _description_
+        end_time (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    cycles_update = cycles.copy()
+    # transform start and end times
+    start = str(
+        start_time[:4]
+        + "-"
+        + start_time[4:6]
+        + "-"
+        + start_time[6:8]
+        + " "
+        + start_time[8:10]
+        + ":"
+        + start_time[10:12]
+        + ":00"
+    )
+    end = str(
+        end_time[:4]
+        + "-"
+        + end_time[4:6]
+        + "-"
+        + end_time[6:8]
+        + " "
+        + end_time[8:10]
+        + ":"
+        + end_time[10:12]
+        + ":00"
+    )
+    start = datetime.strftime(
+        datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
+        - timedelta(minutes=30)
+        - timedelta(hours=10),
+        "%Y-%m-%d %H:%M:%S",
+    )
+    end = datetime.strftime(
+        datetime.strptime(end, "%Y-%m-%d %H:%M:%S")
+        + timedelta(minutes=15)
+        - timedelta(hours=10),
+        "%Y-%m-%d %H:%M:%S",
+    )
+    cycles_update = cycles_update[
+        (cycles_update["TIME_START"] >= start) & (cycles_update["TIME_START"] < end)
+    ]
+
+    return cycles_update
 
 
 ##################################################################################################################################
@@ -524,7 +660,9 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
             .tolist()
         )
     else:
-        date_next = datetime.strftime(datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1), "%Y-%m-%d")
+        date_next = datetime.strftime(
+            datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1), "%Y-%m-%d"
+        )
         shift_end = "06:30:00"
         shift_start = "18:30:00"
         list_times = (
@@ -548,6 +686,11 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
             break
         # Read in the dataframes
 
+        if os.path.exists(f".\\cycles_minestar_{list_times[k]}.csv"):
+            cycles = pd.read_csv(f".\\cycles_minestar_{list_times[k]}.csv")
+        else:
+            Exception("No Push Cycles Data")
+
         if os.path.exists(f"CE_36_B03-{list_times[k]}.csv"):
             data_1 = pd.read_csv(f"CE_36_B03-{list_times[k]}.csv")
             data_1.columns = ["easting", "northing", "elevation"]
@@ -559,18 +702,25 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
         else:
             continue
 
-        if data_1.empty or data_2.empty:
+        cycles_select = query_cycles(cycles, list_times[k], list_times[k + 1])
+
+        if data_1.empty or data_2.empty or cycles.empty:
             continue
 
         # check that the easting and northing coordinates are aligned between the rwo datasets
-        assert_frame_equal(data_1[["easting", "northing"]], data_2[["easting", "northing"]])
+        assert_frame_equal(
+            data_1[["easting", "northing"]], data_2[["easting", "northing"]]
+        )
 
         data_1["dataset"] = str(k)
         data_2["dataset"] = str(k + 1)
         data_full = pd.concat([data_1, data_2], ignore_index=True)
         fig = go.Figure()
         fig = px.scatter_3d(
-            x=data_full["easting"], y=data_full["northing"], z=data_full["elevation"], color=data_full["dataset"]
+            x=data_full["easting"],
+            y=data_full["northing"],
+            z=data_full["elevation"],
+            color=data_full["dataset"],
         )
         fig.show()
 
@@ -586,7 +736,8 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
             # create diff surface
             data_diff = dozer_df_1.reset_index(drop=True)[["easting", "northing"]]
             data_diff["elevation"] = (
-                dozer_df_1.reset_index(drop=True)["elevation"] - dozer_df_2.reset_index(drop=True)["elevation"]
+                dozer_df_1.reset_index(drop=True)["elevation"]
+                - dozer_df_2.reset_index(drop=True)["elevation"]
             )
             # plot to check
             # fig = go.Figure()
@@ -606,11 +757,18 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
             # create df of grid points for join
             data_unjoined = pd.DataFrame([])
             for i in tqdm(range(x.shape[0]), desc="Build Dataframe"):
-                data_unjoined = pd.concat([data_unjoined, pd.concat([pd.DataFrame(x[i]), pd.DataFrame(y[i])], axis=1)])
+                data_unjoined = pd.concat(
+                    [
+                        data_unjoined,
+                        pd.concat([pd.DataFrame(x[i]), pd.DataFrame(y[i])], axis=1),
+                    ]
+                )
             data_unjoined.columns = ["easting", "northing"]
 
             # make join between grid df and data_diff df which should leave some null values in elevation column (fill these with 0)
-            result = pd.merge(data_unjoined, data_diff, how="left", on=["easting", "northing"])
+            result = pd.merge(
+                data_unjoined, data_diff, how="left", on=["easting", "northing"]
+            )
             result["elevation"] = result["elevation"].fillna(0)
 
             # Calculate volume
@@ -620,7 +778,10 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
             vol_at_time.append(
                 (
                     datetime.strptime(
-                        datetime.strftime(datetime.strptime(list_times[k], "%Y%m%d%H%M"), "%Y-%m-%d %H:%M:%S"),
+                        datetime.strftime(
+                            datetime.strptime(list_times[k], "%Y%m%d%H%M"),
+                            "%Y-%m-%d %H:%M:%S",
+                        ),
                         "%Y-%m-%d %H:%M:%S",
                     ),
                     volume,
@@ -661,10 +822,15 @@ def calc_volume_minestar_long(shift, date, data_1_path, data_2_path):
 
     # create diff surface
     data_diff = data_1.reset_index(drop=True)[["easting", "northing"]]
-    data_diff["elevation"] = data_1.reset_index(drop=True)["elevation"] - data_2.reset_index(drop=True)["elevation"]
+    data_diff["elevation"] = (
+        data_1.reset_index(drop=True)["elevation"]
+        - data_2.reset_index(drop=True)["elevation"]
+    )
     # plot to check
     fig = go.Figure()
-    fig = px.scatter_3d(x=data_diff["easting"], y=data_diff["northing"], z=data_diff["elevation"])
+    fig = px.scatter_3d(
+        x=data_diff["easting"], y=data_diff["northing"], z=data_diff["elevation"]
+    )
     fig.show()
     grid_e_min = data_diff["easting"].min()
     grid_n_min = data_diff["northing"].min()
@@ -680,7 +846,9 @@ def calc_volume_minestar_long(shift, date, data_1_path, data_2_path):
     # create df of grid points for join
     data_unjoined = pd.DataFrame([])
     for i in tqdm(range(x.shape[0]), desc="Build Dataframe"):
-        data_unjoined = pd.concat([data_unjoined, pd.concat([pd.DataFrame(x[i]), pd.DataFrame(y[i])], axis=1)])
+        data_unjoined = pd.concat(
+            [data_unjoined, pd.concat([pd.DataFrame(x[i]), pd.DataFrame(y[i])], axis=1)]
+        )
     data_unjoined.columns = ["easting", "northing"]
 
     # make join between grid df and data_diff df which should leave some null values in elevation column (fill these with 0)
@@ -697,13 +865,13 @@ def calc_volume_minestar_long(shift, date, data_1_path, data_2_path):
 
 # cycles = pd.read_csv(".\\dozerpush\\test\\CAT_MINESTAR_cycles_04292100-15.csv")
 
-#cycles = pd.read_csv("Result_5.csv")
-#cycles = pd.read_csv(".\\dozerpush\\test\\Result_5.csv")
+# cycles = pd.read_csv("Result_5.csv")
+# cycles = pd.read_csv(".\\dozerpush\\test\\Result_5.csv")
 
-#fig = go.Figure()
-#fig = px.scatter_3d(x=cycles["StartEast"], y=cycles["StartNorth"], z=cycles["StartElv"], color=cycles["NAME"])
-#fig.show()
+# fig = go.Figure()
+# fig = px.scatter_3d(x=cycles["StartEast"], y=cycles["StartNorth"], z=cycles["StartElv"], color=cycles["NAME"])
+# fig.show()
 
-calc_volume_minestar("Night", "2023-04-29",'','')
+calc_volume_minestar("Night", "2023-04-29", "", "")
 
 ...
