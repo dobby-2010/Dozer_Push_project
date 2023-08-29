@@ -549,13 +549,11 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
         # Read in the dataframes
 
         if os.path.exists(f"CE_36_B03-{list_times[k]}.csv"):
-            print((f"CE_36_B03-{list_times[k]}.csv"))
             data_1 = pd.read_csv(f"CE_36_B03-{list_times[k]}.csv")
             data_1.columns = ["easting", "northing", "elevation"]
         else:
             continue
         if os.path.exists(f"CE_36_B03-{list_times[k+1]}.csv"):
-            print((f"CE_36_B03-{list_times[k+1]}.csv"))
             data_2 = pd.read_csv(f"CE_36_B03-{list_times[k+1]}.csv")
             data_2.columns = ["easting", "northing", "elevation"]
         else:
