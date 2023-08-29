@@ -362,82 +362,13 @@ def clean_cross_sections(
 
 
 # ----------------------------------------------------------------
-def clean_cross_sections_long_confirmed(
-    data_1,
-    data_2,
-    threshold=1,
-):
-    """
-    This function cleans the cross sections that are abnormal for comparing 2 surfaces far apart in time.
-    """
-
-    data_1["dataset"] = "t1"
-    data_2["dataset"] = "t2"
-    data_full = pd.concat([data_1, data_2], ignore_index=True)
-    data_diff_full = data_1[["easting", "northing"]]
-    data_diff_full["elevation"] = data_1["elevation"] - data_2["elevation"]
-
-    norths_to_inspect = []
-    for i in data_diff_full["northing"].unique():
-        x = data_diff_full.loc[
-            (data_diff_full["northing"] == i)
-            & (
-                (data_diff_full["elevation"] < -1 * threshold)
-                | ((data_diff_full["elevation"] > threshold))
-            ),
-            :,
-        ]
-        if not x.empty:
-            norths_to_inspect.append(i)
-    for j in range(len(norths_to_inspect)):
-        data_full_1 = data_full[data_full["northing"] == norths_to_inspect[j]]
-        cross_section_t1 = data_full_1[data_full_1["dataset"] == "t1"].reset_index(
-            drop=True
-        )
-        cross_section_t2 = data_full_1[data_full_1["dataset"] == "t2"].reset_index(
-            drop=True
-        )
-        data = pd.concat([cross_section_t1, cross_section_t2], ignore_index=True)
-
-        # reshape and make new df with easting and absolute delta elevation
-        data_reshaped = data[data["dataset"] == "t1"].reset_index(drop=True)
-        data_reshaped["absolute_delta_elevation"] = abs(
-            data_reshaped["elevation"]
-            - data[data["dataset"] == "t2"]["elevation"].reset_index(drop=True)
-        )
-        data_reshaped = data_reshaped[["easting", "absolute_delta_elevation"]]
-        # find when abs delta > 6
-        rows_of_interest = data_reshaped[
-            data_reshaped["absolute_delta_elevation"] > threshold
-        ]
-        if not np.isnan(
-            rows_of_interest[
-                rows_of_interest.index < (data_reshaped.index.max() // 3)
-            ].index.max()
-        ):
-            # data_reshaped[data_reshaped["easting"]== data_reshaped[data_reshaped["absolute_delta_elevation"] > 6].max()["easting"]].index[0] # returns index of max elev diff
-            data_small_1 = data_full_1.loc[
-                data_full_1["easting"]
-                < data_reshaped[
-                    data_reshaped["absolute_delta_elevation"] > threshold
-                ].max()["easting"],
-                :,
-            ]  # returns all rows where
-            data_small_1.loc[data_small_1["dataset"] == "t1", "elevation"] = np.array(
-                data_small_1.loc[data_small_1["dataset"] == "t2", "elevation"]
-            )
-            data_1.loc[
-                data_small_1.loc[data_small_1["dataset"] == "t1", :].index.tolist(),
-                "elevation",
-            ] = np.array(data_small_1.loc[data_small_1["dataset"] == "t1", "elevation"])
-
-    return data_1, data_2
-
-
-def locate_dozer(cycles, surface):
+def locate_dozer(cycles, surface, allocated_dozers):
     """This function takes the minestar cycles and the minestar surface and identifies the dozer working in the broken slots.
     Assuming that the push direction is due north."""
+
+    dozer_codes = []
     cycles_dozers = cycles.NAME.unique()
+    allocated_dozers = []
     for i in cycles_dozers:
         cycles_north = cycles[cycles["NAME"] == i]
         norths = cycles_north.StartNorth.unique().tolist()
@@ -453,15 +384,72 @@ def locate_dozer(cycles, surface):
         # search surface and see if this dozer worked in this area
         for j in norths:
             if j in surface.northing.unique().tolist():
-                dozer_code = i
+                dozer_codes.append(i)
+
             else:
                 pass
+
+    dozer_codes_unique = list(set(dozer_codes))
+
+    if len(dozer_codes_unique) == 1:
+        dozer_code = dozer_codes_unique[0]
+
+    else:
+        # check if any dozers in dozer_codes already assigned
+        # if assigned then drop from dozer_codes
+        dozers_remaining = [x for x in dozer_codes_unique if x not in allocated_dozers]
+        # calculate centroid of all minestar cycles included in dozer_codes
+        plot_cycles_df_start = cycles[["StartEast", "StartNorth", "StartElv", "NAME"]]
+        plot_cycles_df_stop = cycles[["EndEast", "EndNorth", "EndElv", "NAME"]]
+        plot_cycles_df_start.loc[:, "source"] = "minestar"
+        plot_cycles_df_stop.loc[:, "source"] = "minestar"
+        plot_cycles_df_start = plot_cycles_df_start.rename(
+            columns={
+                "StartEast": "easting",
+                "StartNorth": "northing",
+                "StartElv": "elevation",
+                "NAME": "dozer",
+            }
+        )
+
+        plot_cycles_df_stop = plot_cycles_df_stop.rename(
+            columns={
+                "EndEast": "easting",
+                "EndNorth": "northing",
+                "EndElv": "elevation",
+                "NAME": "dozer",
+            }
+        )
+
+        cycles_start_end = pd.concat([plot_cycles_df_start, plot_cycles_df_stop])
+
+        minestar_centroid_northings = []
+
+        for i in dozers_remaining:
+            minestar_centroid_northings.append(
+                cycles_start_end.loc[
+                    cycles_start_end["dozer"] == i, "northing"
+                ].median()
+            )
+
+        # calculate centroid of pams delta surfaces
+        pams_centroid_northing = surface.northing.median()
+        # determine which is closer then assign
+        distance = [
+            abs(i - pams_centroid_northing) for i in minestar_centroid_northings
+        ]
+        min_index = np.array(distance).argmin()
+        # therefore closest dozer is
+        dozer_code = dozers_remaining[min_index]
+
     return dozer_code
 
 
+# ----------------------------------------------------------------
 def clean_slots(
     data_1,
     data_2,
+    cycles,
     threshold=1.5,
 ):
     """
@@ -471,12 +459,8 @@ def clean_slots(
     data_1["dataset"] = "t1"
     data_2["dataset"] = "t2"
     data_full = pd.concat([data_1, data_2], ignore_index=True)
-    data_diff_full = data_1[["easting", "northing"]]
+    data_diff_full = data_1[["easting", "northing"]].copy()
     data_diff_full["elevation"] = data_1["elevation"] - data_2["elevation"]
-
-    # cycles = pd.read_csv(".\\dozerpush\\test\\Result_5.csv") # 5 is for 29
-    cycles = pd.read_csv(".\\Result_4.csv")
-
     # isolate strips of work
     a = sorted(
         data_diff_full[data_diff_full["elevation"] != 0].northing.unique().tolist()
@@ -487,29 +471,37 @@ def clean_slots(
     start_new_section = diff_norths[diff_norths[0] > 1.0].index.tolist()
     start_new_section.insert(0, 0)
     start_new_section.insert(len(a) - 1, len(a) - 1)
+    allocated_dozers = []
     # loop through and apply fix
     for i in range(len(start_new_section)):
         if i + 1 == len(start_new_section):
             break
 
+        elif start_new_section == [-1, 0]:
+            # no work has been done.
+            break
         data_test = data_full[
             data_full["northing"].isin(
                 a[start_new_section[i] : start_new_section[i + 1]]
             )
         ][["easting", "northing", "elevation"]].astype(np.float64)
+
         X = data_test[["easting", "northing"]].values.reshape(-1, 2)
         Y = data_test["elevation"]
-        # Find out who was working
-        dozer_code = locate_dozer(cycles, data_test)
 
+        # Find out who was working using the are to be checked and the rest of the areas
+        dozer_code = locate_dozer(cycles, data_test, allocated_dozers)
+        allocated_dozers.append(dozer_code)
         mn = np.min(data_test, axis=0)
         mx = np.max(data_test, axis=0)
         xx_pred, yy_pred = np.meshgrid(
             np.linspace(mn[0], mx[0], int(mx[0] - mn[0] + 1)),
             np.linspace(mn[1], mx[1], int(mx[1] - mn[1] + 1)),
         )
+
         model_viz = np.array([xx_pred.flatten(), yy_pred.flatten()]).T
         degree = 3
+
         # poly = PolynomialFeatures(degree=degree)
         # X_poly = poly.fit_transform(X)
         # lr_poly = LinearRegression()
@@ -519,7 +511,6 @@ def clean_slots(
         )
         model.fit(X, Y)
         predicted = model.predict(model_viz)
-
         # now plot / see what points would be removed by this method
         data_spline = pd.DataFrame(
             np.array(
@@ -532,17 +523,17 @@ def clean_slots(
             ).T,
             columns=[["easting", "northing", "lower_elevation", "upper_elevation"]],
         )
-        data_spline.columns = ["_".join(a) for a in data_spline.columns.to_flat_index()]
 
+        data_spline.columns = ["_".join(a) for a in data_spline.columns.to_flat_index()]
         # join this dataframe with data_test
         df_spline = pd.merge(data_spline, data_test, on=["easting", "northing"])
-
         # then update elevations to upper / lower limit of spline fit if outside this interval
         df_spline.loc[
             df_spline["elevation"] < df_spline["lower_elevation"], "elevation"
         ] = df_spline.loc[
             df_spline["elevation"] < df_spline["lower_elevation"], "lower_elevation"
         ]
+
         df_spline.loc[
             df_spline["elevation"] > df_spline["upper_elevation"], "elevation"
         ] = df_spline.loc[
@@ -552,6 +543,7 @@ def clean_slots(
         df_spline = df_spline.sort_values(by=["easting", "northing"])
         data_test = data_test.sort_values(by=["easting", "northing"])
         # check same before equating indexes
+
         if (
             (
                 data_test[["easting", "northing"]].reset_index(drop=True)
@@ -561,18 +553,31 @@ def clean_slots(
             .all()
         ):
             df_spline.index = data_test.index
+
             data_full.loc[df_spline.index, "elevation"] = df_spline.loc[
                 df_spline.index, "elevation"
             ]
+
             data_full.loc[df_spline.index, "dozer"] = dozer_code
+
             data_1 = data_full[data_full["dataset"] == "t1"]
+
             data_2 = data_full[data_full["dataset"] == "t2"]
+
+            data_full = pd.concat(
+                [
+                    data_full,
+                ],
+                axis=1,
+            )
+
         else:
             raise Exception
 
     return data_1, data_2
 
 
+# ----------------------------------------------------------------
 def query_cycles(cycles, start_time, end_time):
     """_summary_
 
@@ -629,7 +634,7 @@ def query_cycles(cycles, start_time, end_time):
     return cycles_update
 
 
-##################################################################################################################################
+# ----------------------------------------------------------------
 def calc_volume_minestar(shift, date, data_1_path, data_2_path):
     """
     This function calculates the volume between two surfaces that are recorded 15 minutes apart.
@@ -726,7 +731,7 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
 
         # Clean up surfaces
         data_1, data_2 = clean_cross_sections(data_1, data_2)
-        data_1, data_2 = clean_slots(data_1, data_2)
+        data_1, data_2 = clean_slots(data_1, data_2, cycles_select)
 
         # Extract dozer name for dozer specific volumes
         for l in [x for x in data_1.dozer.unique().tolist() if str(x) != "nan"]:
@@ -791,76 +796,6 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
 
     volumes = pd.DataFrame(vol_at_time, columns=["datetime", "volume_(m^3)", "dozer"])
     return volumes
-
-
-# Write code to calculate volume for a shift for the multitude of 15 blocks
-calc_volume_minestar("Night", "2023-04-29", "", "")
-
-
-def calc_volume_minestar_long(shift, date, data_1_path, data_2_path):
-    """
-    This function calculates the volume between two surfaces that are recorded 15 minutes apart.
-    If want to calculate volume over a longer period then use alternative function.
-    """
-
-    data_1 = pd.read_csv(".\\dozerpush\\test\\.csv")
-    data_1.columns = ["easting", "northing", "elevation"]
-
-    data_2 = pd.read_csv(".\\dozerpush\\test\\.csv")
-    data_2.columns = ["easting", "northing", "elevation"]
-
-    # check that the easting and northing coordinates are aligned between the rwo datasets
-    assert_frame_equal(data_1[["easting", "northing"]], data_2[["easting", "northing"]])
-
-    data_1["dataset"] = "t1"
-    data_2["dataset"] = "t2"
-    data_full = pd.concat([data_1, data_2], ignore_index=True)
-
-    # Clean up surfaces
-    data_1, data_2 = clean_cross_sections(data_1, data_2)
-    data_1, data_2 = clean_cross_sections_long_confirmed(data_1, data_2)
-
-    # create diff surface
-    data_diff = data_1.reset_index(drop=True)[["easting", "northing"]]
-    data_diff["elevation"] = (
-        data_1.reset_index(drop=True)["elevation"]
-        - data_2.reset_index(drop=True)["elevation"]
-    )
-    # plot to check
-    fig = go.Figure()
-    fig = px.scatter_3d(
-        x=data_diff["easting"], y=data_diff["northing"], z=data_diff["elevation"]
-    )
-    fig.show()
-    grid_e_min = data_diff["easting"].min()
-    grid_n_min = data_diff["northing"].min()
-    grid_e_max = data_diff["easting"].max()
-    grid_n_max = data_diff["northing"].max()
-
-    # make grid of points for easting and northing
-    x, y = np.meshgrid(
-        np.arange(grid_e_min, grid_e_max + 0.1, 1),
-        np.arange(grid_n_min, grid_n_max + 0.1, 1),
-    )
-
-    # create df of grid points for join
-    data_unjoined = pd.DataFrame([])
-    for i in tqdm(range(x.shape[0]), desc="Build Dataframe"):
-        data_unjoined = pd.concat(
-            [data_unjoined, pd.concat([pd.DataFrame(x[i]), pd.DataFrame(y[i])], axis=1)]
-        )
-    data_unjoined.columns = ["easting", "northing"]
-
-    # make join between grid df and data_diff df which should leave some null values in elevation column (fill these with 0)
-    result = pd.merge(data_unjoined, data_diff, how="left", on=["easting", "northing"])
-    result["elevation"] = result["elevation"].fillna(0)
-
-    # Calculate volume
-    rows = x.shape[0]
-    columns = x.shape[1]
-    volume = calculate_volume(rows, columns, result)
-
-    return volume
 
 
 # cycles = pd.read_csv(".\\dozerpush\\test\\CAT_MINESTAR_cycles_04292100-15.csv")
