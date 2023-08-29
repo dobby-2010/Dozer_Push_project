@@ -734,6 +734,8 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
         data_1, data_2 = clean_slots(data_1, data_2, cycles_select)
 
         # Extract dozer name for dozer specific volumes
+        if list_times[k] == str(202304292230):
+            pass
         for l in [x for x in data_1.dozer.unique().tolist() if str(x) != "nan"]:
             dozer_df_1 = data_1[data_1["dozer"] == l]
             dozer_df_2 = data_2[data_2["dozer"] == l]
