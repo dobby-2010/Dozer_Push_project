@@ -58,10 +58,6 @@ def calculate_volume(rows, columns, result):
     return sum(cuboid_volumes_pos) + (-1 * sum(cuboid_volumes_neg))
 
 
-#---------------------------------------------------------------------
-def remove_errors()
-
-
 # ----------------------------------------------------------------
 def clean_cross_sections(
     data_1,
@@ -82,7 +78,9 @@ def clean_cross_sections(
     data_full["cluster"] = np.nan
     norths = data_full.northing.unique()
     features = []
-    for k in tqdm(norths, total=len(data_full.northing.unique()), desc="Filter Cross Sections"):
+    for k in tqdm(
+        norths, total=len(data_full.northing.unique()), desc="Filter Cross Sections"
+    ):
         # Create parameters
 
         # Break into cross sections
@@ -90,12 +88,14 @@ def clean_cross_sections(
         cross_section_t1 = cross_section[cross_section["dataset"] == "t1"]
         cross_section_t2 = cross_section[cross_section["dataset"] == "t2"]
         data_diff = cross_section_t1[["easting", "northing"]].reset_index(drop=True)
-        data_diff["delta_elevation"] = cross_section_t1["elevation"].reset_index(drop=True) - cross_section_t2[
-            "elevation"
-        ].reset_index(drop=True)
+        data_diff["delta_elevation"] = cross_section_t1["elevation"].reset_index(
+            drop=True
+        ) - cross_section_t2["elevation"].reset_index(drop=True)
         # only select points in cross section where there is a dffference in elevation
         cross_section_worthy = cross_section[
-            cross_section["easting"].isin(list(data_diff[data_diff["delta_elevation"] != 0].easting))
+            cross_section["easting"].isin(
+                list(data_diff[data_diff["delta_elevation"] != 0].easting)
+            )
         ]
         if cross_section_worthy.empty or (len(cross_section_worthy) < 4):
             continue
@@ -103,10 +103,19 @@ def clean_cross_sections(
         elevation_centres = []
         # process to decide if even worth interpolating for each dataset
         for i in cross_section_worthy["dataset"].unique():
-            df_temp = cross_section_worthy[cross_section_worthy["dataset"] == i].reset_index(drop=True)
+            df_temp = cross_section_worthy[
+                cross_section_worthy["dataset"] == i
+            ].reset_index(drop=True)
             df_index = cross_section_worthy[cross_section_worthy["dataset"] == i].copy()
             elevation_centres.append(
-                (i, stat.median(cross_section_worthy.loc[cross_section_worthy["dataset"] == i, "elevation"]))
+                (
+                    i,
+                    stat.median(
+                        cross_section_worthy.loc[
+                            cross_section_worthy["dataset"] == i, "elevation"
+                        ]
+                    ),
+                )
             )
             # write process to find distance from point to point in this dataset
 
@@ -122,7 +131,8 @@ def clean_cross_sections(
                 else:
                     continue
             max_dist = max_dist_tolerance * math.dist(
-                df_temp.iloc[0][["easting", "elevation"]], df_temp.iloc[-1][["easting", "elevation"]]
+                df_temp.iloc[0][["easting", "elevation"]],
+                df_temp.iloc[-1][["easting", "elevation"]],
             )
 
             if stat.stdev(df_temp.elevation) < max_stddev or sum(dist) < max_dist:
@@ -137,28 +147,40 @@ def clean_cross_sections(
                     row_ix = where(yhat == cluster)
 
                     # find the centroid of this cluster
-                    centroid_elevation = df_index[["elevation", "easting"]].to_numpy()[row_ix, 0].mean()
+                    centroid_elevation = (
+                        df_index[["elevation", "easting"]].to_numpy()[row_ix, 0].mean()
+                    )
                     other_surface_elevation = cross_section_worthy[
                         cross_section_worthy["dataset"] != i
                     ].elevation.mean()
-                    if (centroid_elevation < other_surface_elevation - distribution_limit) or (
-                        centroid_elevation > other_surface_elevation + distribution_limit
+                    if (
+                        centroid_elevation
+                        < other_surface_elevation - distribution_limit
+                    ) or (
+                        centroid_elevation
+                        > other_surface_elevation + distribution_limit
                     ):
                         row_ix = list(df_index.iloc[row_ix]["elevation"].index)
                         df_index.loc[row_ix, "elevation"] = np.nan
 
                 if df_index.elevation.isna().all():
                     # just make this the same so that we don't count this cross section
-                    df_index.loc[:, "elevation"] = cross_section_worthy[cross_section_worthy["dataset"] != i].loc[
-                        :, "elevation"
-                    ]
+                    df_index.loc[:, "elevation"] = cross_section_worthy[
+                        cross_section_worthy["dataset"] != i
+                    ].loc[:, "elevation"]
                     update_values = list(df_index.index)
-                    data_full.loc[update_values, "elevation"] = df_index["elevation"].values
+                    data_full.loc[update_values, "elevation"] = df_index[
+                        "elevation"
+                    ].values
                 else:
                     # In this area begin interpolation
-                    df_index.loc[:, "elevation"] = df_index.loc[:, "elevation"].interpolate(method="linear")
+                    df_index.loc[:, "elevation"] = df_index.loc[
+                        :, "elevation"
+                    ].interpolate(method="linear")
                     b, a = cheby1(N=3, Wn=0.94, rp=21)
-                    df_index.loc[:, "elevation"] = filtfilt(b, a, df_index.loc[:, "elevation"].values)
+                    df_index.loc[:, "elevation"] = filtfilt(
+                        b, a, df_index.loc[:, "elevation"].values
+                    )
                     update_values = list(df_index.index)
                     data_full.loc[update_values, :] = df_index
 
@@ -191,38 +213,55 @@ def clean_cross_sections_long_confirmed(
     for i in data_diff_full["northing"].unique():
         x = data_diff_full.loc[
             (data_diff_full["northing"] == i)
-            & ((data_diff_full["elevation"] < -1 * threshold) | ((data_diff_full["elevation"] > threshold))),
+            & (
+                (data_diff_full["elevation"] < -1 * threshold)
+                | ((data_diff_full["elevation"] > threshold))
+            ),
             :,
         ]
         if not x.empty:
             norths_to_inspect.append(i)
     for j in range(len(norths_to_inspect)):
         data_full_1 = data_full[data_full["northing"] == norths_to_inspect[j]]
-        cross_section_t1 = data_full_1[data_full_1["dataset"] == "t1"].reset_index(drop=True)
-        cross_section_t2 = data_full_1[data_full_1["dataset"] == "t2"].reset_index(drop=True)
+        cross_section_t1 = data_full_1[data_full_1["dataset"] == "t1"].reset_index(
+            drop=True
+        )
+        cross_section_t2 = data_full_1[data_full_1["dataset"] == "t2"].reset_index(
+            drop=True
+        )
         data = pd.concat([cross_section_t1, cross_section_t2], ignore_index=True)
 
         # reshape and make new df with easting and absolute delta elevation
         data_reshaped = data[data["dataset"] == "t1"].reset_index(drop=True)
         data_reshaped["absolute_delta_elevation"] = abs(
-            data_reshaped["elevation"] - data[data["dataset"] == "t2"]["elevation"].reset_index(drop=True)
+            data_reshaped["elevation"]
+            - data[data["dataset"] == "t2"]["elevation"].reset_index(drop=True)
         )
         data_reshaped = data_reshaped[["easting", "absolute_delta_elevation"]]
         # find when abs delta > 6
-        rows_of_interest = data_reshaped[data_reshaped["absolute_delta_elevation"] > threshold]
-        if not np.isnan(rows_of_interest[rows_of_interest.index < (data_reshaped.index.max() // 3)].index.max()):
+        rows_of_interest = data_reshaped[
+            data_reshaped["absolute_delta_elevation"] > threshold
+        ]
+        if not np.isnan(
+            rows_of_interest[
+                rows_of_interest.index < (data_reshaped.index.max() // 3)
+            ].index.max()
+        ):
             # data_reshaped[data_reshaped["easting"]== data_reshaped[data_reshaped["absolute_delta_elevation"] > 6].max()["easting"]].index[0] # returns index of max elev diff
             data_small_1 = data_full_1.loc[
                 data_full_1["easting"]
-                < data_reshaped[data_reshaped["absolute_delta_elevation"] > threshold].max()["easting"],
+                < data_reshaped[
+                    data_reshaped["absolute_delta_elevation"] > threshold
+                ].max()["easting"],
                 :,
             ]  # returns all rows where
             data_small_1.loc[data_small_1["dataset"] == "t1", "elevation"] = np.array(
                 data_small_1.loc[data_small_1["dataset"] == "t2", "elevation"]
             )
-            data_1.loc[data_small_1.loc[data_small_1["dataset"] == "t1", :].index.tolist(), "elevation"] = np.array(
-                data_small_1.loc[data_small_1["dataset"] == "t1", "elevation"]
-            )
+            data_1.loc[
+                data_small_1.loc[data_small_1["dataset"] == "t1", :].index.tolist(),
+                "elevation",
+            ] = np.array(data_small_1.loc[data_small_1["dataset"] == "t1", "elevation"])
 
     return data_1, data_2
 
@@ -268,10 +307,12 @@ def clean_slots(
     data_diff_full["elevation"] = data_1["elevation"] - data_2["elevation"]
 
     # cycles = pd.read_csv(".\\dozerpush\\test\\Result_5.csv") # 5 is for 29
-    #cycles = pd.read_csv(".\\dozerpush\\test\\Result_4.csv")
+    # cycles = pd.read_csv(".\\dozerpush\\test\\Result_4.csv")
     cycles = pd.read_csv("Result_5.csv")  # 4 is for 28
     # isolate strips of work
-    a = sorted(data_diff_full[data_diff_full["elevation"] != 0].northing.unique().tolist())
+    a = sorted(
+        data_diff_full[data_diff_full["elevation"] != 0].northing.unique().tolist()
+    )
     b = [x - a[i - 1] for i, x in enumerate(a)][1:]
     b.insert(0, 0.0)
     diff_norths = pd.DataFrame(b)
@@ -283,9 +324,11 @@ def clean_slots(
         if i + 1 == len(start_new_section):
             break
 
-        data_test = data_full[data_full["northing"].isin(a[start_new_section[i] : start_new_section[i + 1]])][
-            ["easting", "northing", "elevation"]
-        ].astype(np.float64)
+        data_test = data_full[
+            data_full["northing"].isin(
+                a[start_new_section[i] : start_new_section[i + 1]]
+            )
+        ][["easting", "northing", "elevation"]].astype(np.float64)
         X = data_test[["easting", "northing"]].values.reshape(-1, 2)
         Y = data_test["elevation"]
         # Find out who was working
@@ -294,7 +337,8 @@ def clean_slots(
         mn = np.min(data_test, axis=0)
         mx = np.max(data_test, axis=0)
         xx_pred, yy_pred = np.meshgrid(
-            np.linspace(mn[0], mx[0], int(mx[0] - mn[0] + 1)), np.linspace(mn[1], mx[1], int(mx[1] - mn[1] + 1))
+            np.linspace(mn[0], mx[0], int(mx[0] - mn[0] + 1)),
+            np.linspace(mn[1], mx[1], int(mx[1] - mn[1] + 1)),
         )
         model_viz = np.array([xx_pred.flatten(), yy_pred.flatten()]).T
         degree = 3
@@ -302,13 +346,22 @@ def clean_slots(
         # X_poly = poly.fit_transform(X)
         # lr_poly = LinearRegression()
         # lr_poly.fit(X_poly, Y)
-        model = make_pipeline(SplineTransformer(n_knots=4, degree=degree), Ridge(alpha=1e-3))
+        model = make_pipeline(
+            SplineTransformer(n_knots=4, degree=degree), Ridge(alpha=1e-3)
+        )
         model.fit(X, Y)
         predicted = model.predict(model_viz)
 
         # now plot / see what points would be removed by this method
         data_spline = pd.DataFrame(
-            np.array((xx_pred.flatten(), yy_pred.flatten(), predicted - threshold, predicted + threshold)).T,
+            np.array(
+                (
+                    xx_pred.flatten(),
+                    yy_pred.flatten(),
+                    predicted - threshold,
+                    predicted + threshold,
+                )
+            ).T,
             columns=[["easting", "northing", "lower_elevation", "upper_elevation"]],
         )
         data_spline.columns = ["_".join(a) for a in data_spline.columns.to_flat_index()]
@@ -317,10 +370,14 @@ def clean_slots(
         df_spline = pd.merge(data_spline, data_test, on=["easting", "northing"])
 
         # then update elevations to upper / lower limit of spline fit if outside this interval
-        df_spline.loc[df_spline["elevation"] < df_spline["lower_elevation"], "elevation"] = df_spline.loc[
+        df_spline.loc[
+            df_spline["elevation"] < df_spline["lower_elevation"], "elevation"
+        ] = df_spline.loc[
             df_spline["elevation"] < df_spline["lower_elevation"], "lower_elevation"
         ]
-        df_spline.loc[df_spline["elevation"] > df_spline["upper_elevation"], "elevation"] = df_spline.loc[
+        df_spline.loc[
+            df_spline["elevation"] > df_spline["upper_elevation"], "elevation"
+        ] = df_spline.loc[
             df_spline["elevation"] > df_spline["upper_elevation"], "upper_elevation"
         ]
 
@@ -336,7 +393,9 @@ def clean_slots(
             .all()
         ):
             df_spline.index = data_test.index
-            data_full.loc[df_spline.index, "elevation"] = df_spline.loc[df_spline.index, "elevation"]
+            data_full.loc[df_spline.index, "elevation"] = df_spline.loc[
+                df_spline.index, "elevation"
+            ]
             data_full.loc[df_spline.index, "dozer"] = dozer_code
             data_1 = data_full[data_full["dataset"] == "t1"]
             data_2 = data_full[data_full["dataset"] == "t2"]
@@ -377,7 +436,9 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
             .tolist()
         )
     else:
-        date_next = datetime.strftime(datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1), "%Y-%m-%d")
+        date_next = datetime.strftime(
+            datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1), "%Y-%m-%d"
+        )
         shift_end = "06:30:00"
         shift_start = "18:30:00"
         list_times = (
@@ -416,14 +477,19 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
             continue
 
         # check that the easting and northing coordinates are aligned between the rwo datasets
-        assert_frame_equal(data_1[["easting", "northing"]], data_2[["easting", "northing"]])
+        assert_frame_equal(
+            data_1[["easting", "northing"]], data_2[["easting", "northing"]]
+        )
 
         data_1["dataset"] = str(k)
         data_2["dataset"] = str(k + 1)
         data_full = pd.concat([data_1, data_2], ignore_index=True)
         fig = go.Figure()
         fig = px.scatter_3d(
-            x=data_full["easting"], y=data_full["northing"], z=data_full["elevation"], color=data_full["dataset"]
+            x=data_full["easting"],
+            y=data_full["northing"],
+            z=data_full["elevation"],
+            color=data_full["dataset"],
         )
         fig.show()
 
@@ -439,7 +505,8 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
             # create diff surface
             data_diff = dozer_df_1.reset_index(drop=True)[["easting", "northing"]]
             data_diff["elevation"] = (
-                dozer_df_1.reset_index(drop=True)["elevation"] - dozer_df_2.reset_index(drop=True)["elevation"]
+                dozer_df_1.reset_index(drop=True)["elevation"]
+                - dozer_df_2.reset_index(drop=True)["elevation"]
             )
             # plot to check
             # fig = go.Figure()
@@ -459,11 +526,18 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
             # create df of grid points for join
             data_unjoined = pd.DataFrame([])
             for i in tqdm(range(x.shape[0]), desc="Build Dataframe"):
-                data_unjoined = pd.concat([data_unjoined, pd.concat([pd.DataFrame(x[i]), pd.DataFrame(y[i])], axis=1)])
+                data_unjoined = pd.concat(
+                    [
+                        data_unjoined,
+                        pd.concat([pd.DataFrame(x[i]), pd.DataFrame(y[i])], axis=1),
+                    ]
+                )
             data_unjoined.columns = ["easting", "northing"]
 
             # make join between grid df and data_diff df which should leave some null values in elevation column (fill these with 0)
-            result = pd.merge(data_unjoined, data_diff, how="left", on=["easting", "northing"])
+            result = pd.merge(
+                data_unjoined, data_diff, how="left", on=["easting", "northing"]
+            )
             result["elevation"] = result["elevation"].fillna(0)
 
             # Calculate volume
@@ -473,7 +547,10 @@ def calc_volume_minestar(shift, date, data_1_path, data_2_path):
             vol_at_time.append(
                 (
                     datetime.strptime(
-                        datetime.strftime(datetime.strptime(list_times[k], "%Y%m%d%H%M"), "%Y-%m-%d %H:%M:%S"),
+                        datetime.strftime(
+                            datetime.strptime(list_times[k], "%Y%m%d%H%M"),
+                            "%Y-%m-%d %H:%M:%S",
+                        ),
                         "%Y-%m-%d %H:%M:%S",
                     ),
                     volume,
@@ -514,10 +591,15 @@ def calc_volume_minestar_long(shift, date, data_1_path, data_2_path):
 
     # create diff surface
     data_diff = data_1.reset_index(drop=True)[["easting", "northing"]]
-    data_diff["elevation"] = data_1.reset_index(drop=True)["elevation"] - data_2.reset_index(drop=True)["elevation"]
+    data_diff["elevation"] = (
+        data_1.reset_index(drop=True)["elevation"]
+        - data_2.reset_index(drop=True)["elevation"]
+    )
     # plot to check
     fig = go.Figure()
-    fig = px.scatter_3d(x=data_diff["easting"], y=data_diff["northing"], z=data_diff["elevation"])
+    fig = px.scatter_3d(
+        x=data_diff["easting"], y=data_diff["northing"], z=data_diff["elevation"]
+    )
     fig.show()
     grid_e_min = data_diff["easting"].min()
     grid_n_min = data_diff["northing"].min()
@@ -533,7 +615,9 @@ def calc_volume_minestar_long(shift, date, data_1_path, data_2_path):
     # create df of grid points for join
     data_unjoined = pd.DataFrame([])
     for i in tqdm(range(x.shape[0]), desc="Build Dataframe"):
-        data_unjoined = pd.concat([data_unjoined, pd.concat([pd.DataFrame(x[i]), pd.DataFrame(y[i])], axis=1)])
+        data_unjoined = pd.concat(
+            [data_unjoined, pd.concat([pd.DataFrame(x[i]), pd.DataFrame(y[i])], axis=1)]
+        )
     data_unjoined.columns = ["easting", "northing"]
 
     # make join between grid df and data_diff df which should leave some null values in elevation column (fill these with 0)
@@ -551,8 +635,13 @@ def calc_volume_minestar_long(shift, date, data_1_path, data_2_path):
 # cycles = pd.read_csv(".\\dozerpush\\test\\CAT_MINESTAR_cycles_04292100-15.csv")
 
 cycles = pd.read_csv("Result_5.csv")
-#cycles = pd.read_csv(".\\dozerpush\\test\\Result_5.csv")
+# cycles = pd.read_csv(".\\dozerpush\\test\\Result_5.csv")
 
 fig = go.Figure()
-fig = px.scatter_3d(x=cycles["StartEast"], y=cycles["StartNorth"], z=cycles["StartElv"], color=cycles["NAME"])
+fig = px.scatter_3d(
+    x=cycles["StartEast"],
+    y=cycles["StartNorth"],
+    z=cycles["StartElv"],
+    color=cycles["NAME"],
+)
 fig.show()
